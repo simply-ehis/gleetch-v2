@@ -28,6 +28,7 @@ function AppInner() {
   const [iter, setIter] = useState(0);
   const [burst, setBurst] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
+  const [seedLocked, setSeedLocked] = useState(false);
 
   const [vMode, setVMode] = useState('generate');
   const [uploadedImg, setUploadedImg] = useState(null);
@@ -97,12 +98,12 @@ function AppInner() {
       <div className="body">
         <SidebarResizer />
         {tab === 'visual' && (
-          <VisualTab seed={seed} iter={iter} onReroll={reroll} mode={vMode} setMode={setVMode} uploadedImg={uploadedImg} setUploadedImg={setUploadedImg} initialRecipe={incomingRecipe?.t === 'visual' ? incomingRecipe : null} />
+          <VisualTab seed={seed} iter={iter} onReroll={reroll} mode={vMode} setMode={setVMode} uploadedImg={uploadedImg} setUploadedImg={setUploadedImg} initialRecipe={incomingRecipe?.t === 'visual' ? incomingRecipe : null} seedLocked={seedLocked} onSeedLockChange={setSeedLocked} />
         )}
-        {tab === 'text' && <TextTab seed={seed} onReroll={reroll} initialRecipe={incomingRecipe?.t === 'text' ? incomingRecipe : null} />}
-        {tab === 'audio' && <AudioTab seed={seed} onReroll={reroll} initialRecipe={incomingRecipe?.t === 'audio' ? incomingRecipe : null} />}
-        {tab === 'video' && <VideoTab seed={seed} onReroll={reroll} initialRecipe={incomingRecipe?.t === 'video' ? incomingRecipe : null} />}
-        {tab === 'web' && <WebTab seed={seed} onReroll={reroll} initialRecipe={incomingRecipe?.t === 'web' ? incomingRecipe : null} />}
+        {tab === 'text' && <TextTab seed={seed} onReroll={reroll} initialRecipe={incomingRecipe?.t === 'text' ? incomingRecipe : null} seedLocked={seedLocked} onSeedLockChange={setSeedLocked} />}
+        {tab === 'audio' && <AudioTab seed={seed} onReroll={reroll} initialRecipe={incomingRecipe?.t === 'audio' ? incomingRecipe : null} seedLocked={seedLocked} onSeedLockChange={setSeedLocked} />}
+        {tab === 'video' && <VideoTab seed={seed} onReroll={reroll} initialRecipe={incomingRecipe?.t === 'video' ? incomingRecipe : null} seedLocked={seedLocked} onSeedLockChange={setSeedLocked} />}
+        {tab === 'web' && <WebTab seed={seed} onReroll={reroll} initialRecipe={incomingRecipe?.t === 'web' ? incomingRecipe : null} seedLocked={seedLocked} onSeedLockChange={setSeedLocked} />}
       </div>
     </div>
   );

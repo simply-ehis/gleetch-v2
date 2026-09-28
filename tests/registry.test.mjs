@@ -176,7 +176,7 @@ test('randomEffectSelection never repeats an id within a chain', () => {
   }
 });
 
-test('randomEffectSelection respects exclude so rerolls never return the same chain', () => {
+test('randomEffectSelection respects hard excludes and rerolls can keep useful effects', () => {
   const a = randomEffectSelection('image', prng(5));
   for (let seed = 1; seed <= 30; seed++) {
     const b = randomEffectSelection('image', prng(seed), { exclude: a });
@@ -184,6 +184,13 @@ test('randomEffectSelection respects exclude so rerolls never return the same ch
   }
   const all = getEffectsFor('image').map((e) => e.id);
   assert.deepEqual(randomEffectSelection('image', prng(3), { exclude: all }), []);
+});
+
+test('randomEffectSelection changes an identical reroll without shrinking the palette', () => {
+  const current = ['pixelSort', 'chanShift', 'gaussianBlur'];
+  const next = randomEffectSelection('image', prng(5), { previousChain: current, signatureChance: 1 });
+  assert.notDeepEqual(next, current, 'reroll should not repeat the same ordered chain');
+  assert.ok(next.some((id) => current.includes(id)), 'reroll should be allowed to retain complementary current effects');
 });
 
 test('randomEffectSelection signature chains are valid and non-heavy for video', () => {

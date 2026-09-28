@@ -36,16 +36,15 @@ export function renderProceduralVideoFrame(ctx, W, H, seed, timeMs, opts = {}) {
   layers = Math.min(layers, maxLayers);
   const picks = pickPatterns(clipRng, layers);
 
-  // Per-frame time evolution: small hue/shift drift, not full re-pick
-  // Use timeMs to derive a frameRng that evolves slowly (100ms quant)
-  const frameTick = Math.floor(timeMs / 80);
-  const frameRng = prng(seed ^ (frameTick * 0x9e3779b9));
+  // Stable rng for the whole clip — patterns don't re-pick, they evolve.
+  const stableRng = prng(seed);
+  const frameRng = stableRng;
 
   // Subtle animated offset: shift pattern via translation (cheap) to give motion
   // without re-rolling pattern choice. Use fbm for smooth drift.
   const driftX = fbm(timeMs * 0.0003, 0, seed) * 24 - 12;
   const driftY = fbm(0, timeMs * 0.0003, seed + 999) * 24 - 12;
-  const rot = frameRng() < 0.18 ? (frameRng() * 0.06 - 0.03) : 0; // occasional micro-rotation
+  const rot = Math.sin(timeMs * 0.001 + seed) * 0.02; // smooth micro-rotation
 
   if (layers === 1) {
     ctx.save();

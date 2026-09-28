@@ -44,12 +44,15 @@ function buildConsoleSnippet(css) {
 })();`;
 }
 
-export default function WebTab({ seed, onReroll, initialRecipe }) {
+export default function WebTab({ seed, onReroll, initialRecipe, seedLocked, onSeedLockChange }) {
   const [algos, setAlgos] = useState(initialRecipe?.a ?? ['cssScanlines', 'cssRgbSplit']);
   const [intensity, setIntensity] = useState(initialRecipe?.i ?? 0.5);
   const [effectParams, setEffectParams] = useState(initialRecipe?.p ?? {});
   const [preset, setPreset] = useState(null);
   const [showAdv, setShowAdv] = useState(false);
+  const [favorites, setFavorites] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('gleetch-favorites') || '[]'); } catch { return []; }
+  });
   const [importedCss, setImportedCss] = useState('');
   const [showImport, setShowImport] = useState(false);
 
@@ -58,12 +61,20 @@ export default function WebTab({ seed, onReroll, initialRecipe }) {
 
   const applyPreset = (k) => { const p = WEB_PRESETS[k]; setAlgos(p.algos); setIntensity(p.intensity); setPreset(k); };
   const toggleAlgo = (id) => { setPreset(null); setAlgos((p) => (p.includes(id) ? p.filter((a) => a !== id) : [...p, id])); };
+  const toggleFavorite = (id) => {
+    setFavorites((prev) => {
+      const next = prev.includes(id) ? prev.filter((f) => f !== id) : [...prev, id];
+      try { localStorage.setItem('gleetch-favorites', JSON.stringify(next)); } catch { /* ignore */ }
+      return next;
+    });
+  };
 
   const shuffle = () => {
     const rng = prng(randomSeed());
     setPreset(null);
     setAlgos(randomEffectSelection('web', rng, { exclude: algos }));
     setIntensity(0.3 + rng() * 0.6);
+    if (!seedLocked) onReroll();
   };
 
   const downloadCss = () => {
@@ -89,7 +100,7 @@ export default function WebTab({ seed, onReroll, initialRecipe }) {
         <span className="lbl">PRESETS</span>
         <PresetPanel presets={WEB_PRESETS} active={preset} onSelect={applyPreset} />
         <button className="adv-toggle" onClick={() => setShowAdv((v) => !v)}>{showAdv ? '▼' : '▶'} EFFECTS ({WEB_EFFECTS_LIST.length})</button>
-        {showAdv && <div className="algo-scroll"><AlgoPanel effects={WEB_EFFECTS_LIST} active={algos} onToggle={toggleAlgo} /></div>}
+        {showAdv && <div className="algo-scroll"><AlgoPanel effects={WEB_EFFECTS_LIST} active={algos} onToggle={toggleAlgo} favorites={favorites} onToggleFavorite={toggleFavorite} /></div>}
         <ActiveChainList algos={algos} mediaType="web" onReorder={setAlgos} onRemove={(id) => setAlgos((p) => p.filter((a) => a !== id))} effectParams={effectParams} onParamsChange={setEffectParams} />
         <div className="div" />
         <div className="sec">
@@ -98,7 +109,11 @@ export default function WebTab({ seed, onReroll, initialRecipe }) {
             value={intensity} onChange={(e) => { setPreset(null); setIntensity(parseFloat(e.target.value)); }} />
         </div>
         <div className="div" />
-        <div className="seed-row"><span className="seed-lbl">SEED</span><span className="seed-val">#{seedStr}</span></div>
+        <div className="seed-row"><span className="seed-lbl">SEED</span><span className="seed-val">#{seedStr}</span>
+          <button className={`seed-lock-btn ${seedLocked ? 'locked' : ''}`} onClick={() => onSeedLockChange(!seedLocked)} title={seedLocked ? 'Unlock seed (shuffle will re-roll)' : 'Lock seed (shuffle keeps base pattern)'}>
+            {seedLocked ? '🔒' : '🔓'}
+          </button>
+        </div>
         <button className="reroll-btn" onClick={onReroll}>⟳  RE-ROLL</button>
         <ShuffleButton onClick={shuffle} />
         <CopyRecipeButton getRecipe={() => ({ t: 'web', s: seed, a: algos, i: intensity, p: effectParams })} />

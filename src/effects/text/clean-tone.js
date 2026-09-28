@@ -1,3 +1,4 @@
+import { codePoints } from '../../core/text-utils.js';
 import { HOMOGLYPHS } from './corruption.js';
 
 // MARGIN DRIFT — the text equivalent of LENS ABERRATION: clean, quiet in the
@@ -7,10 +8,11 @@ import { HOMOGLYPHS } from './corruption.js';
 // canvas center.
 export function marginDrift(text, intensity, rng) {
   return text.split('\n').map((line) => {
-    const L = line.length;
+    const chars = codePoints(line);
+    const L = chars.length;
     if (L < 3) return line;
     const center = (L - 1) / 2;
-    return line.split('').map((c, i) => {
+    return chars.map((c, i) => {
       const distFromCenter = Math.abs(i - center) / center; // 0 at middle, 1 at edges
       const chance = intensity * distFromCenter * distFromCenter;
       return rng() < chance && HOMOGLYPHS[c] ? HOMOGLYPHS[c] : c;
@@ -26,7 +28,7 @@ export function caseWave(text, intensity, rng) {
   const freq = 0.15 + intensity * 0.5;
   const phase = rng() * Math.PI * 2;
   let i = 0;
-  return text.split('').map((c) => {
+  return codePoints(text).map((c) => {
     if (!/[a-zA-Z]/.test(c)) return c;
     const wave = Math.sin(i++ * freq + phase);
     return wave > 0 ? c.toUpperCase() : c.toLowerCase();

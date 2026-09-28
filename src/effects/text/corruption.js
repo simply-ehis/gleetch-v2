@@ -1,9 +1,11 @@
+import { codePoints } from '../../core/text-utils.js';
+
 const COMBINING = ['\u0300', '\u0301', '\u0302', '\u0308', '\u0324', '\u0325', '\u0330', '\u0332', '\u0336', '\u0337', '\u0338', '\u033f', '\u0360', '\u031a', '\u0328'];
 export const HOMOGLYPHS = { a: 'а', e: 'е', o: 'о', c: 'с', p: 'р', x: 'х', y: 'у', i: 'і', A: 'А', B: 'В', C: 'С', E: 'Е', H: 'Н', K: 'К', M: 'М', O: 'О', P: 'Р', T: 'Т', X: 'Х', Y: 'У' };
 const NOISE_CHARS = '!@#$%^&*~`|\\/<>{}[]?0O1l';
 
 export function zalgo(text, intensity, rng) {
-  return text.split('').map((c) => {
+  return codePoints(text).map((c) => {
     if (c === '\n' || c === ' ') return c;
     let r = c;
     const n = Math.floor(rng() * intensity * 10);
@@ -13,7 +15,7 @@ export function zalgo(text, intensity, rng) {
 }
 
 export function homoglyph(text, intensity, rng) {
-  return text.split('').map((c) => (rng() < intensity * 0.7 && HOMOGLYPHS[c] ? HOMOGLYPHS[c] : c)).join('');
+  return codePoints(text).map((c) => (rng() < intensity * 0.7 && HOMOGLYPHS[c] ? HOMOGLYPHS[c] : c)).join('');
 }
 
 export function stutter(text, intensity, rng) {
@@ -43,8 +45,8 @@ export function lineChaos(text, intensity, rng) {
 }
 
 export function charCorrupt(text, intensity, rng) {
-  return text.split('').map((c) => {
-    if (rng() < intensity * 0.15) return String.fromCharCode(c.charCodeAt(0) ^ (1 << Math.floor(rng() * 6)));
+  return codePoints(text).map((c) => {
+    if (rng() < intensity * 0.15) return String.fromCodePoint(c.codePointAt(0) ^ (1 << Math.floor(rng() * 6)));
     return c;
   }).join('');
 }
@@ -61,11 +63,11 @@ export function repeatBlocks(text, intensity, rng) {
 }
 
 export function caseChaos(text, intensity, rng) {
-  return text.split('').map((c) => (rng() < intensity * 0.4 ? (rng() < 0.5 ? c.toUpperCase() : c.toLowerCase()) : c)).join('');
+  return codePoints(text).map((c) => (rng() < intensity * 0.4 ? (rng() < 0.5 ? c.toUpperCase() : c.toLowerCase()) : c)).join('');
 }
 
 export function noiseInject(text, intensity, rng) {
-  return text.split('').map((c) => {
+  return codePoints(text).map((c) => {
     if (c === '\n') return c;
     if (rng() < intensity * 0.12) return c + NOISE_CHARS[Math.floor(rng() * NOISE_CHARS.length)];
     return c;

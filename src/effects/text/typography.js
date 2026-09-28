@@ -37,6 +37,8 @@ function styleChar(c, style) {
   return c;
 }
 
+import { codePoints } from '../../core/text-utils.js';
+
 // FONT SHUFFLE — assigns a randomly-picked Unicode typeface to each word.
 // Words stay internally consistent (so individual words stay legible) while
 // the passage as a whole reads as a chaotic mix of typefaces. intensity
@@ -46,7 +48,7 @@ export function fontShuffle(text, intensity, rng) {
     if (!token || /^\s+$/.test(token)) return token;
     if (rng() >= intensity) return token;
     const style = FONT_STYLES[Math.floor(rng() * FONT_STYLES.length)];
-    return token.split('').map((c) => styleChar(c, style)).join('');
+    return codePoints(token).map((c) => styleChar(c, style)).join('');
   }).join('');
 }
 

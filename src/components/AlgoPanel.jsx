@@ -1,19 +1,14 @@
+import { useState } from 'react';
 import { prng, seedFromString } from '../core/rng.js';
 import { fontShuffle } from '../effects/text/typography.js';
 
-// TYPOGRAPHY category buttons preview themselves: the button's own label is
-// run through the real FONT SHUFFLE effect, seeded from the label text so
-// it's stable across renders rather than reflowing randomly every paint.
 function displayLabel(effect) {
   if (effect.category !== 'typography') return effect.label;
   return fontShuffle(effect.label, 0.8, prng(seedFromString(effect.label)));
 }
 
-// Renders one toggle button per effect, grouped under a category label.
-// Each category gets its own CSS hover treatment (see index.css: .cat-*
-// rules) so the button chrome hints at what kind of effect it is —
-// corruption flickers, clean-tone stays crisp, distortion skews, etc.
-export default function AlgoPanel({ effects, active, onToggle, showHints = true }) {
+export default function AlgoPanel({ effects, active, onToggle, showHints = true, favorites = [], onToggleFavorite }) {
+  const [collapsed, setCollapsed] = useState({});
   const categories = [];
   const byCategory = {};
   for (const e of effects) {
@@ -21,12 +16,16 @@ export default function AlgoPanel({ effects, active, onToggle, showHints = true 
     byCategory[e.category].push(e);
   }
 
+  const toggleCollapse = (cat) => setCollapsed((p) => ({ ...p, [cat]: !p[cat] }));
+
   return (
     <>
       {categories.map((cat) => (
         <div key={cat}>
-          <div className="algo-cat-lbl">{cat.replace('-', ' ')}</div>
-          {byCategory[cat].map((a) => (
+          <div className="algo-cat-lbl" onClick={() => toggleCollapse(cat)} style={{ cursor: 'pointer', userSelect: 'none' }}>
+            {collapsed[cat] ? '▶' : '▼'} {cat.replace('-', ' ')} ({byCategory[cat].length})
+          </div>
+          {!collapsed[cat] && byCategory[cat].map((a) => (
             <button
               key={a.id}
               className={`algo-btn cat-${a.category} ${active.includes(a.id) ? 'on' : ''}`}
@@ -34,6 +33,14 @@ export default function AlgoPanel({ effects, active, onToggle, showHints = true 
             >
               <span className="adot" />{displayLabel(a)}
               {showHints && <span className="ahint">{a.hint}</span>}
+              {onToggleFavorite && (
+                <span
+                  className={`fav-star ${favorites.includes(a.id) ? 'faved' : ''}`}
+                  onClick={(e) => { e.stopPropagation(); onToggleFavorite(a.id); }}
+                >
+                  {favorites.includes(a.id) ? '★' : '☆'}
+                </span>
+              )}
             </button>
           ))}
         </div>

@@ -41,6 +41,10 @@ typeface it's demonstrating — that's the one deliberate, functional break
 from the two-typeface rule, and it's earned (the button is demonstrating
 exactly the thing it does).
 
+Text effects may intentionally exceed their normal line box, but they must
+remain selectable, copyable Unicode text. Overflow is an output treatment,
+never an excuse to make the editor or its controls unstable.
+
 ---
 
 ## Color Palette

@@ -1,4 +1,6 @@
 import { prng } from '../core/rng.js';
+import { getRating } from './ratings.js';
+import { getFreshness } from '../core/shuffle-history.js';
 import { CORRUPTION_EFFECTS } from './image/corruption.js';
 import { COLOR_TONE_EFFECTS } from './image/color-tone.js';
 import { DISTORTION_EFFECTS } from './image/distortion.js';
@@ -15,15 +17,54 @@ import { PHOTO_TONE_EFFECTS } from './image/photoTone.js';
 import { TEXTILE_EFFECTS } from './image/textile.js';
 import { CORRUPTION2_EFFECTS } from './image/corruption2.js';
 import { CRAFT_EFFECTS } from './image/craft.js';
+import { ATMOSPHERE_EFFECTS } from './image/atmosphere.js';
 import { TEXT_EFFECTS } from './text/corruption.js';
 import { CLEAN_TONE_TEXT_EFFECTS } from './text/clean-tone.js';
 import { TYPOGRAPHY_TEXT_EFFECTS } from './text/typography.js';
 import { POSITION_TEXT_EFFECTS } from './text/position.js';
+import { OVERFLOW_TEXT_EFFECTS } from './text/overflow.js';
 import { WEB_EFFECTS } from './web/glitch.js';
 import { OVERLAY_WEB_EFFECTS } from './web/overlay.js';
 import { STYLIZE_WEB_EFFECTS } from './web/stylize.js';
 import { AUDIO_EFFECTS } from './audio/corruption.js';
 import { AUDIO_CLEAN_TONE_EFFECTS } from './audio/clean-tone.js';
+import { LIGHT_EFFECTS } from './image/light.js';
+import { TONE_EFFECTS } from './image/tone.js';
+import { TEXTURE_EFFECTS } from './image/texture.js';
+import { FORM_EFFECTS } from './image/form.js';
+import { SCRIPT_TEXT_EFFECTS } from './text/script.js';
+import { OVERFLOW2_TEXT_EFFECTS } from './text/overflow2.js';
+import { DECAY_TEXT_EFFECTS } from './text/decay.js';
+import { STRUCTURE_TEXT_EFFECTS } from './text/structure.js';
+
+// Motion profiles by effect family. Effects not listed here use default (burst).
+export const MOTION_PROFILES = {
+  // corruption → burst/steps
+  dataMosh: { kind: 'burst', target: 'intensity', speed: 0.8 },
+  pixelSort: { kind: 'steps', target: 'threshold', speed: 0.4 },
+  bitFlip: { kind: 'burst', target: 'density', speed: 1.2 },
+  chanShift: { kind: 'drift', target: 'offset', speed: 0.15 },
+  stripeBurn: { kind: 'steps', target: 'position', speed: 0.3 },
+  // color-tone → sweep/drift
+  duotone: { kind: 'sweep', target: 'huePair', speed: 0.1 },
+  hueRotate: { kind: 'sweep', target: 'angle', speed: 0.08 },
+  matrixColor: { kind: 'drift', target: 'palette', speed: 0.12 },
+  quantize: { kind: 'pulse', target: 'levels', speed: 0.2 },
+  // distortion → pulse/breathe
+  waveWarp: { kind: 'pulse', target: 'amplitude', speed: 0.25 },
+  lensWarp: { kind: 'breathe', target: 'bulge', speed: 0.15 },
+  displacementMap: { kind: 'drift', target: 'scale', speed: 0.1 },
+  lensAberration: { kind: 'breathe', target: 'fringe', speed: 0.12 },
+  lineDistortion: { kind: 'pulse', target: 'frequency', speed: 0.3 },
+  // stylize → scrub/drift
+  oilPaint: { kind: 'scrub', target: 'brushSize', speed: 0.05 },
+  watercolorBleed: { kind: 'drift', target: 'bleed', speed: 0.08 },
+  risograph: { kind: 'scrub', target: 'dotSize', speed: 0.06 },
+  // overlay → drift with parallax
+  overlayScreen: { kind: 'drift', target: 'offset', speed: 0.1 },
+  overlayMultiply: { kind: 'drift', target: 'offset', speed: 0.1 },
+  overlayBlend: { kind: 'drift', target: 'offset', speed: 0.1 },
+};
 
 // One flat list of every effect across every media type and category.
 // Each entry: { id, label, hint, category, mediaTypes[], fn, needsChannel? }
@@ -44,15 +85,25 @@ export const ALL_EFFECTS = [
   ...TEXTILE_EFFECTS,
   ...CORRUPTION2_EFFECTS,
   ...CRAFT_EFFECTS,
+  ...ATMOSPHERE_EFFECTS,
   ...TEXT_EFFECTS,
   ...CLEAN_TONE_TEXT_EFFECTS,
   ...TYPOGRAPHY_TEXT_EFFECTS,
   ...POSITION_TEXT_EFFECTS,
+  ...OVERFLOW_TEXT_EFFECTS,
   ...WEB_EFFECTS,
   ...OVERLAY_WEB_EFFECTS,
   ...STYLIZE_WEB_EFFECTS,
   ...AUDIO_EFFECTS,
   ...AUDIO_CLEAN_TONE_EFFECTS,
+  ...LIGHT_EFFECTS,
+  ...TONE_EFFECTS,
+  ...TEXTURE_EFFECTS,
+  ...FORM_EFFECTS,
+  ...SCRIPT_TEXT_EFFECTS,
+  ...OVERFLOW2_TEXT_EFFECTS,
+  ...DECAY_TEXT_EFFECTS,
+  ...STRUCTURE_TEXT_EFFECTS,
 ];
 
 export function getEffectsFor(mediaType) {
@@ -66,6 +117,21 @@ export function getCategoriesFor(mediaType) {
     if (!seen.has(e.category)) { seen.add(e.category); categories.push(e.category); }
   }
   return categories;
+}
+
+// No-op detection: check if a chain produces near-identical output to the input.
+// Returns true if the chain is a no-op (nothing visible changed).
+export function isNoOp(original, processed, threshold = 0.98) {
+  if (original.length !== processed.length) return true;
+  let same = 0;
+  const total = original.length / 4;
+  for (let i = 0; i < original.length; i += 4) {
+    const dr = Math.abs(original[i] - processed[i]);
+    const dg = Math.abs(original[i + 1] - processed[i + 1]);
+    const db = Math.abs(original[i + 2] - processed[i + 2]);
+    if (dr < 4 && dg < 4 && db < 4) same++;
+  }
+  return same / total > threshold;
 }
 
 // Effect ids are only guaranteed unique WITHIN a media type (e.g. 'stutter'
@@ -92,7 +158,9 @@ export function getEffectById(id, mediaType) {
 // omit it
 // entirely for chains with no param-aware effects, which is every effect
 // except the ones that opt into this.
-export function applyEffectChain(data, effectIds, ctx, rng, effectParams = {}) {
+const DEFAULT_ENV = { t: 0, phase: 0, dt: 0, frame: 0, duration: 0, loop: false, s: 1 };
+
+export function applyEffectChain(data, effectIds, ctx, rng, effectParams = {}, env = DEFAULT_ENV) {
   let result = data;
   for (const id of effectIds) {
     const effect = getEffectById(id, ctx.mediaType);
@@ -100,12 +168,12 @@ export function applyEffectChain(data, effectIds, ctx, rng, effectParams = {}) {
     const params = effect.params ? sanitizeParams(effect, effectParams[id]) : undefined;
     if (ctx.mediaType === 'image') {
       result = effect.needsChannel
-        ? effect.fn(result, ctx.W, ctx.H, ctx.intensity, ctx.channel, rng, params)
-        : effect.fn(result, ctx.W, ctx.H, ctx.intensity, rng, params);
+        ? effect.fn(result, ctx.W, ctx.H, ctx.intensity, ctx.channel, rng, params, env)
+        : effect.fn(result, ctx.W, ctx.H, ctx.intensity, rng, params, env);
     } else if (ctx.mediaType === 'audio') {
-      result = effect.fn(result, ctx.sampleRate, ctx.intensity, rng, params);
+      result = effect.fn(result, ctx.sampleRate, ctx.intensity, rng, params, env);
     } else {
-      result = effect.fn(result, ctx.intensity, rng, params);
+      result = effect.fn(result, ctx.intensity, rng, params, env);
     }
   }
   return result;
@@ -202,14 +270,11 @@ const SIGNATURE_CHAINS = {
   ],
 };
 
-// True randomness: no category weighting — every effect equally likely.
-// Previously weighted corruption/distortion higher, which biased toward
-// line-heavy geometric effects and made shuffles feel like "always lines".
-const CATEGORY_WEIGHTS = {};
-const DEFAULT_CATEGORY_WEIGHT = 1;
-
-function weightedCategoryPick(rng, categories) {
-  const weights = categories.map((c) => CATEGORY_WEIGHTS[c] ?? DEFAULT_CATEGORY_WEIGHT);
+function weightedCategoryPick(rng, categories, pool) {
+  const weights = categories.map((c) => {
+    const effects = pool.filter((e) => e.category === c);
+    return effects.reduce((sum, e) => sum + getRating(e.id) * getFreshness(e.id), 0);
+  });
   const total = weights.reduce((a, b) => a + b, 0);
   let roll = rng() * total;
   for (let i = 0; i < categories.length; i++) {
@@ -219,26 +284,52 @@ function weightedCategoryPick(rng, categories) {
   return categories[categories.length - 1];
 }
 
-function pickFromCategory(rng, idsByCategory, category, taken) {
+function pickFromCategory(rng, idsByCategory, category, taken, pool) {
   const candidates = (idsByCategory.get(category) || []).filter((id) => !taken.has(id));
   if (!candidates.length) return null;
-  return candidates[Math.floor(rng() * candidates.length)];
+  const weighted = candidates.map((id) => {
+    const effect = pool.find((e) => e.id === id);
+    return { id, weight: getRating(id) * getFreshness(id) };
+  });
+  const total = weighted.reduce((s, w) => s + w.weight, 0);
+  let roll = rng() * total;
+  for (const w of weighted) {
+    roll -= w.weight;
+    if (roll <= 0) return w.id;
+  }
+  return weighted[weighted.length - 1].id;
+}
+
+function ensureDifferentChain(chain, previousChain, pool, rng) {
+  if (!previousChain?.length || chain.length !== previousChain.length || chain.some((id, i) => id !== previousChain[i])) return chain;
+  const replacement = pool.find((effect) => !chain.includes(effect.id));
+  if (!replacement) return [...chain].reverse();
+  const index = Math.floor(rng() * chain.length);
+  const next = [...chain];
+  next[index] = replacement.id;
+  return next;
 }
 
 // Picks a dynamic chain of effect ids for a media type (used by the shuffle
 // button). Two modes: ~15% of rerolls return a curated SIGNATURE_CHAINS
 // combo (occasionally grown with one complementary effect), the rest are
 // composed fresh with pure randomness — an anchor category chosen with
-// glitch-identity weights, then each step prefers a category different
+// rating-weighted probabilities, then each step prefers a category different
 // from the last so effects complement instead of cancelling. Never repeats
 // an id within a chain.
 //   options.exclude         — ids to avoid (pass the current chain so a
 //                             reroll can never return the same chain twice)
 //   options.signatureChance — 0..1, default 0.15 (lower = more pure randomness)
 //   options.pureRandom      — if true, skip signatures entirely
+//   options.realtimeOnly    — if true, exclude realtimeSafe:false effects (video)
 export function randomEffectSelection(mediaType, rng, options = {}) {
-  const { minCount = 2, maxCount = 4, exclude = [], signatureChance = 0.15, pureRandom = false } = options;
-  const pool = getEffectsFor(mediaType).filter((e) => !exclude.includes(e.id));
+  const { minCount = 2, maxCount = 4, exclude = [], previousChain = [], signatureChance = 0.15, pureRandom = false, realtimeOnly = false } = options;
+  // `exclude` is a hard availability restriction for callers that need it.
+  // UI rerolls use `previousChain` below: it keeps the entire palette
+  // available and rejects only an identical result, fixing the old behaviour
+  // where each shuffle removed its own current ingredients from future picks.
+  let pool = getEffectsFor(mediaType).filter((e) => !exclude.includes(e.id));
+  if (realtimeOnly) pool = pool.filter((e) => e.realtimeSafe !== false);
   if (!pool.length) return [];
   const taken = new Set(exclude);
 
@@ -248,22 +339,20 @@ export function randomEffectSelection(mediaType, rng, options = {}) {
     if (signatures.length) {
       const chain = [...signatures[Math.floor(rng() * signatures.length)]];
       chain.forEach((id) => taken.add(id));
-      // pure randomness tweak: perturb signature with chaos jitter 20% of the time
+      const sigPool = mediaType === 'video' ? pool.filter((e) => e.realtimeSafe !== false) : pool;
       if (rng() < 0.2 && chain.length > 1) {
         const idx = Math.floor(rng() * chain.length);
-        const alt = pool.filter((e) => !taken.has(e.id) && e.category === chain[idx] ? true : false);
-        // fallback to any not taken
-        const pick = (alt.length ? alt : pool.filter((e) => !taken.has(e.id)))[Math.floor(rng() * (alt.length || 1))];
+        const alt = sigPool.filter((e) => !taken.has(e.id) && e.category === chain[idx] ? true : false);
+        const pick = (alt.length ? alt : sigPool.filter((e) => !taken.has(e.id)))[Math.floor(rng() * (alt.length || 1))];
         if (pick) { taken.delete(chain[idx]); chain[idx] = pick.id; taken.add(pick.id); }
       }
       if (rng() < 0.25 && chain.length < maxCount) {
-        const growPool = mediaType === 'video' ? pool.filter((e) => e.realtimeSafe !== false) : pool;
-        const rest = growPool.filter((e) => !taken.has(e.id));
+        const rest = sigPool.filter((e) => !taken.has(e.id));
         if (rest.length) {
           chain.push(rest[Math.floor(rng() * rest.length)].id);
         }
       }
-      return chain;
+      return ensureDifferentChain(chain, previousChain, pool, rng);
     }
   }
 
@@ -279,12 +368,12 @@ export function randomEffectSelection(mediaType, rng, options = {}) {
   while (chain.length < count) {
     let category;
     if (!lastCategory || rng() < 0.15) {
-      category = weightedCategoryPick(rng, categories);
+      category = weightedCategoryPick(rng, categories, pool);
     } else {
       const others = categories.filter((c) => c !== lastCategory);
-      category = others.length ? weightedCategoryPick(rng, others) : lastCategory;
+      category = others.length ? weightedCategoryPick(rng, others, pool) : lastCategory;
     }
-    const id = pickFromCategory(rng, byCategory, category, taken);
+    const id = pickFromCategory(rng, byCategory, category, taken, pool);
     if (id === null) {
       const rest = pool.filter((e) => !taken.has(e.id));
       if (!rest.length) break;
@@ -298,7 +387,7 @@ export function randomEffectSelection(mediaType, rng, options = {}) {
       lastCategory = category;
     }
   }
-  return chain;
+  return ensureDifferentChain(chain, previousChain, pool, rng);
 }
 
 // Video-specific chain runner. Most effects (pixel sort, datamosh, wave warp,
@@ -313,7 +402,7 @@ export function randomEffectSelection(mediaType, rng, options = {}) {
 // Heavy effects (oilPaint, voronoi, overlay) flagged realtimeSafe:false can
 // be throttled via shouldProcessHeavy for quality tiers. Default FALSE for
 // backward compatibility — continuous playback skips heavy effects.
-export function applyVideoEffectChain(data, effectIds, ctx, clipSeed, frameSeed, effectParams = {}, shouldProcessHeavy = false) {
+export function applyVideoEffectChain(data, effectIds, ctx, clipSeed, frameSeed, effectParams = {}, shouldProcessHeavy = false, env = DEFAULT_ENV) {
   let result = data;
   for (const id of effectIds) {
     const effect = getEffectById(id, 'video');
@@ -322,8 +411,8 @@ export function applyVideoEffectChain(data, effectIds, ctx, clipSeed, frameSeed,
     const rng = prng(effect.stableAcrossFrames ? clipSeed : frameSeed);
     const params = effect.params ? sanitizeParams(effect, effectParams[id]) : undefined;
     result = effect.needsChannel
-      ? effect.fn(result, ctx.W, ctx.H, ctx.intensity, ctx.channel, rng, params)
-      : effect.fn(result, ctx.W, ctx.H, ctx.intensity, rng, params);
+      ? effect.fn(result, ctx.W, ctx.H, ctx.intensity, ctx.channel, rng, params, env)
+      : effect.fn(result, ctx.W, ctx.H, ctx.intensity, rng, params, env);
   }
   return result;
 }

@@ -52,11 +52,15 @@ export function QualityProvider({ children }) {
     if (typeof window !== 'undefined') {
       const stored = localStorage.getItem('gleetch-quality');
       if (stored && QUALITY_TIERS[stored]) return stored;
-      // Auto-detect based on hardware
       const cores = navigator.hardwareConcurrency || 4;
-      const mem = navigator.deviceMemory || 4;
-      if (cores <= 4 || mem <= 4) return 'low';
-      if (cores <= 8 || mem <= 8) return 'medium';
+      const mem = navigator.deviceMemory;
+      if (mem !== undefined) {
+        if (cores <= 4 || mem <= 4) return 'low';
+        if (cores <= 8 || mem <= 8) return 'medium';
+        return 'high';
+      }
+      if (cores <= 4) return 'low';
+      if (cores <= 8) return 'medium';
       return 'high';
     }
     return 'medium';

@@ -34,7 +34,7 @@ function drawWaveform(canvas, audioBuffer, step = 1) {
   ctx.stroke();
 }
 
-export default function AudioTab({ seed, onReroll, initialRecipe }) {
+export default function AudioTab({ seed, onReroll, initialRecipe, seedLocked, onSeedLockChange }) {
   const { current: quality } = useQuality();
   
   const [audioBuffer, setAudioBuffer] = useState(null);
@@ -44,6 +44,9 @@ export default function AudioTab({ seed, onReroll, initialRecipe }) {
   const [effectParams, setEffectParams] = useState(initialRecipe?.p ?? {});
   const [preset, setPreset] = useState(null);
   const [showAdv, setShowAdv] = useState(false);
+  const [favorites, setFavorites] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('gleetch-favorites') || '[]'); } catch { return []; }
+  });
   const [busy, setBusy] = useState(false);
   const [playing, setPlaying] = useState(false);
   const waveCanvasRef = useRef(null);
@@ -107,12 +110,20 @@ export default function AudioTab({ seed, onReroll, initialRecipe }) {
 
   const applyPreset = (k) => { const p = AUDIO_PRESETS[k]; setAlgos(p.algos); setIntensity(p.intensity); setPreset(k); };
   const toggleAlgo = (id) => { setPreset(null); setAlgos((p) => (p.includes(id) ? p.filter((a) => a !== id) : [...p, id])); };
+  const toggleFavorite = (id) => {
+    setFavorites((prev) => {
+      const next = prev.includes(id) ? prev.filter((f) => f !== id) : [...prev, id];
+      try { localStorage.setItem('gleetch-favorites', JSON.stringify(next)); } catch { /* ignore */ }
+      return next;
+    });
+  };
 
   const shuffle = () => {
     const rng = prng(randomSeed());
     setPreset(null);
     setAlgos(randomEffectSelection('audio', rng, { exclude: algos }));
     setIntensity(0.2 + rng() * 0.65);
+    if (!seedLocked) onReroll();
   };
 
   const seedStr = String(seed).padStart(6, '0');
@@ -125,7 +136,7 @@ export default function AudioTab({ seed, onReroll, initialRecipe }) {
         <span className="lbl">PRESETS</span>
         <PresetPanel presets={AUDIO_PRESETS} active={preset} onSelect={applyPreset} />
         <button className="adv-toggle" onClick={() => setShowAdv((v) => !v)}>{showAdv ? '▼' : '▶'} EFFECTS ({AUDIO_EFFECTS.length})</button>
-        {showAdv && <div className="algo-scroll"><AlgoPanel effects={AUDIO_EFFECTS} active={algos} onToggle={toggleAlgo} /></div>}
+        {showAdv && <div className="algo-scroll"><AlgoPanel effects={AUDIO_EFFECTS} active={algos} onToggle={toggleAlgo} favorites={favorites} onToggleFavorite={toggleFavorite} /></div>}
         <ActiveChainList algos={algos} mediaType="audio" onReorder={setAlgos} onRemove={(id) => setAlgos((p) => p.filter((a) => a !== id))} effectParams={effectParams} onParamsChange={setEffectParams} />
         <div className="div" />
         <div className="sec">
@@ -134,7 +145,11 @@ export default function AudioTab({ seed, onReroll, initialRecipe }) {
             value={intensity} onChange={(e) => { setPreset(null); setIntensity(parseFloat(e.target.value)); }} />
         </div>
         <div className="div" />
-        <div className="seed-row"><span className="seed-lbl">SEED</span><span className="seed-val">#{seedStr}</span></div>
+        <div className="seed-row"><span className="seed-lbl">SEED</span><span className="seed-val">#{seedStr}</span>
+          <button className={`seed-lock-btn ${seedLocked ? 'locked' : ''}`} onClick={() => onSeedLockChange(!seedLocked)} title={seedLocked ? 'Unlock seed (shuffle will re-roll)' : 'Lock seed (shuffle keeps base pattern)'}>
+            {seedLocked ? '🔒' : '🔓'}
+          </button>
+        </div>
         <button className="reroll-btn" onClick={onReroll}>⟳  NEW SEED</button>
         <ShuffleButton onClick={shuffle} />
         <CopyRecipeButton getRecipe={() => ({ t: 'audio', s: seed, a: algos, i: intensity, p: effectParams })} />

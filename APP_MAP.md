@@ -22,10 +22,10 @@ generated CSS. This is the one system every tab ultimately calls into.
 - `core/procedural.js` — infinite procedural layering (1-3 patterns, distinct families, blend modes)
 - `effects/registry.js` — `ALL_EFFECTS`, `getEffectsFor`, `getEffectById`,
   `applyEffectChain`, `applyVideoEffectChain`, `buildWebCSS`,
-  `randomEffectSelection` (lowered `signatureChance` 0.3→0.15 + pure-random jitter for true infinitude)
+  `randomEffectSelection` (signature chains plus category-aware variety; rerolls retain the full palette and reject only an identical chain)
 - `effects/image/*.js`, `effects/text/*.js`, `effects/audio/*.js`,
   `effects/web/*.js` — the actual effect functions (this round adds `painterly.js`, `print.js`,
-  `geometric2.js`, `photoTone.js`, `textile.js`, `corruption2.js`, `craft.js` — 34 new image styles)
+  `geometric2.js`, `photoTone.js`, `textile.js`, `corruption2.js`, `craft.js`, `atmosphere.js`; `text/overflow.js` adds copy-safe line-breaking and Unicode overflow text treatments)
 
 ### Depends On
 Nothing internal — this is the foundation layer. External: none (pure JS).

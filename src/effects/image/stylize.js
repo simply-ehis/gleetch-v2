@@ -215,12 +215,12 @@ export function asciiShapes(buf, W, H, intensity, rng, params) {
 }
 
 export const STYLIZE_EFFECTS = [
-  { id: 'halftoneFilter', label: 'HALFTONE', hint: 'newsprint dot pattern', category: 'stylize', mediaTypes: ['image', 'video'], fn: halftoneFilter },
-  { id: 'edgeSketch', label: 'EDGE SKETCH', hint: 'sobel pencil outline', category: 'stylize', mediaTypes: ['image', 'video'], fn: edgeSketch },
-  { id: 'oilPaint', label: 'OIL PAINT', hint: 'mode-filter brushwork (full-quality frame capture only)', category: 'stylize', mediaTypes: ['image', 'video'], realtimeSafe: false, fn: oilPaint },
-  { id: 'dotMosaic', label: 'DOT MOSAIC', hint: 'uniform circle-packed grid, full color', category: 'stylize', mediaTypes: ['image', 'video'], fn: dotMosaic },
+  { id: 'halftoneFilter', label: 'HALFTONE', hint: 'newsprint dot pattern', category: 'print', mediaTypes: ['image', 'video'], fn: halftoneFilter },
+  { id: 'edgeSketch', label: 'EDGE SKETCH', hint: 'sobel pencil outline', category: 'craft', mediaTypes: ['image', 'video'], fn: edgeSketch },
+  { id: 'oilPaint', label: 'OIL PAINT', hint: 'mode-filter brushwork (full-quality frame capture only)', category: 'painterly', mediaTypes: ['image', 'video'], realtimeSafe: false, fn: oilPaint },
+  { id: 'dotMosaic', label: 'DOT MOSAIC', hint: 'uniform circle-packed grid, full color', category: 'craft', mediaTypes: ['image', 'video'], fn: dotMosaic },
   {
-    id: 'asciiShapes', label: 'ASCII SHAPES', hint: 'density mapped to shape, color is yours to pick', category: 'stylize', mediaTypes: ['image', 'video'], fn: asciiShapes,
+    id: 'asciiShapes', label: 'ASCII SHAPES', hint: 'density mapped to shape, color is yours to pick', category: 'print', mediaTypes: ['image', 'video'], fn: asciiShapes,
     params: [
       { key: 'colorMode', type: 'select', label: 'COLOR', default: 'palette', options: [{ value: 'palette', label: 'Palette' }, { value: 'single', label: 'Single' }, { value: 'random', label: 'Random' }] },
       { key: 'color', type: 'color', label: 'PICK COLOR', default: '#00E5FF', showWhen: { colorMode: 'single' } },

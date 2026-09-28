@@ -3,7 +3,7 @@ import { prng } from '../core/rng.js';
 import { loadImageFile, drawImageCover } from '../core/canvas-utils.js';
 import { FORMATS, resolveDims, clampDim } from '../core/formats.js';
 import { renderProcedural } from '../core/procedural.js';
-import { getEffectsFor, applyEffectChain, randomEffectSelection } from '../effects/registry.js';
+import { getEffectsFor, applyEffectChain, randomEffectSelection, isNoOp } from '../effects/registry.js';
 import { IMAGE_PRESETS, V_CHANNELS } from '../effects/presets.js';
 import { randomSeed } from '../core/constants.js';
 import AlgoPanel from './AlgoPanel.jsx';
@@ -14,6 +14,7 @@ import ScrambleText from './ScrambleText.jsx';
 import ActiveChainList from './ActiveChainList.jsx';
 import CopyRecipeButton from './CopyRecipeButton.jsx';
 import { useQuality } from '../core/quality.jsx';
+import { renderStill, EXPORT_PRESETS, resolveExportDims } from '../core/render-still.js';
 
 const IMAGE_EFFECTS = getEffectsFor('image');
 
@@ -27,7 +28,7 @@ function loadFormatPref() {
   } catch { return null; }
 }
 
-export default function VisualTab({ seed, iter, onReroll, mode, setMode, uploadedImg, setUploadedImg, initialRecipe }) {
+export default function VisualTab({ seed, iter, onReroll, mode, setMode, uploadedImg, setUploadedImg, initialRecipe, seedLocked, onSeedLockChange }) {
   const { current: quality } = useQuality();
 
   const [algos, setAlgos] = useState(() => {
@@ -40,6 +41,14 @@ export default function VisualTab({ seed, iter, onReroll, mode, setMode, uploade
   const [preset, setPreset] = useState(null);
   const [busy, setBusy] = useState(false);
   const [showAdv, setShowAdv] = useState(false);
+  const [favorites, setFavorites] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('gleetch-favorites') || '[]'); } catch { return []; }
+  });
+  const [exportPreset, setExportPreset] = useState('phone');
+  const [exporting, setExporting] = useState(false);
+  const [exportProgress, setExportProgress] = useState(0);
+  const [showPreview, setShowPreview] = useState(false);
+  const previewRef = useRef(null);
   const workRef = useRef(null);
   const outRef = useRef(null);
   const outImageDataRef = useRef(null);
@@ -142,12 +151,33 @@ export default function VisualTab({ seed, iter, onReroll, mode, setMode, uploade
 
   const applyPreset = (k) => { const p = IMAGE_PRESETS[k]; setAlgos(p.algos); setIntensity(p.intensity); setPreset(k); };
   const toggleAlgo = (id) => { setPreset(null); setAlgos((p) => (p.includes(id) ? withoutOrRefill(p, id) : [...p, id])); };
+  const toggleFavorite = (id) => {
+    setFavorites((prev) => {
+      const next = prev.includes(id) ? prev.filter((f) => f !== id) : [...prev, id];
+      try { localStorage.setItem('gleetch-favorites', JSON.stringify(next)); } catch { /* ignore */ }
+      return next;
+    });
+  };
 
   const shuffle = () => {
     const rng = prng(randomSeed());
     setPreset(null);
-    setAlgos(randomEffectSelection('image', rng, { exclude: algos }));
-    setIntensity(0.3 + rng() * 0.6);
+    let chain = randomEffectSelection('image', rng, { previousChain: algos });
+    let intensity = 0.3 + rng() * 0.6;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const testCanvas = document.createElement('canvas');
+      testCanvas.width = 64; testCanvas.height = 64;
+      const testCtx = testCanvas.getContext('2d');
+      try { renderProcedural(testCtx, 64, 64, seed, { maxLayers: 1 }); } catch { testCtx.fillStyle = '#1a1a2e'; testCtx.fillRect(0, 0, 64, 64); }
+      const before = testCtx.getImageData(0, 0, 64, 64).data;
+      const after = applyEffectChain(new Uint8ClampedArray(before), chain, { mediaType: 'image', W: 64, H: 64, intensity, channel }, prng(seed + 999), {});
+      if (!isNoOp(before, after)) break;
+      chain = randomEffectSelection('image', rng, { previousChain: algos });
+      intensity = 0.3 + rng() * 0.6;
+    }
+    setAlgos(chain);
+    setIntensity(intensity);
+    if (!seedLocked) onReroll();
   };
 
   const download = (format = 'png') => {
@@ -157,6 +187,68 @@ export default function VisualTab({ seed, iter, onReroll, mode, setMode, uploade
     a.download = `gleetch-${String(seed).padStart(6, '0')}-${dims.W}x${dims.H}.${format === 'jpg' ? 'jpg' : 'png'}`;
     a.click();
   };
+
+  const exportFullRes = () => {
+    setExporting(true);
+    setExportProgress(0);
+    const { W, H } = resolveExportDims(exportPreset);
+    const useWorker = typeof Worker !== 'undefined' && W * H > 512 * 512;
+    if (useWorker) {
+      const worker = new Worker(new URL('../core/render.worker.js', import.meta.url), { type: 'module' });
+      worker.onmessage = (e) => {
+        if (e.data.type === 'progress') setExportProgress(e.data.value);
+        else if (e.data.type === 'done') {
+          const url = URL.createObjectURL(e.data.blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `gleetch-${String(seed).padStart(6, '0')}-${W}x${H}.png`;
+          a.click();
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
+          worker.terminate();
+          setExporting(false);
+        } else if (e.data.type === 'error') {
+          console.error('Export failed:', e.data.message);
+          worker.terminate();
+          setExporting(false);
+        }
+      };
+      worker.postMessage({ seed, algos, intensity, channel, effectParams, W, H, maxLayers: quality.maxLayers ?? 3 });
+    } else {
+      setTimeout(() => {
+        try {
+          const buf = renderStill({ seed, algos, intensity, channel, effectParams, W, H, maxLayers: quality.maxLayers ?? 3, dither: true });
+          const canvas = document.createElement('canvas');
+          canvas.width = W; canvas.height = H;
+          const ctx = canvas.getContext('2d');
+          const imgData = ctx.createImageData(W, H);
+          imgData.data.set(buf);
+          ctx.putImageData(imgData, 0, 0);
+          const a = document.createElement('a');
+          a.href = canvas.toDataURL('image/png');
+          a.download = `gleetch-${String(seed).padStart(6, '0')}-${W}x${H}.png`;
+          a.click();
+        } catch (err) { console.error('Export failed:', err); }
+        finally { setExporting(false); }
+      }, 10);
+    }
+  };
+
+  const updatePreview = useCallback(() => {
+    const pc = previewRef.current;
+    if (!pc || !showPreview) return;
+    const { W, H } = dimsMemo;
+    pc.width = W; pc.height = H;
+    const pctx = pc.getContext('2d', { willReadFrequently: true });
+    try { renderProcedural(pctx, W, H, seed, { maxLayers: quality.maxLayers ?? 3 }); }
+    catch { pctx.fillStyle = '#1a1a2e'; pctx.fillRect(0, 0, W, H); }
+    let buf = pctx.getImageData(0, 0, W, H).data;
+    buf = applyEffectChain(buf, algos, { mediaType: 'image', W, H, intensity: intensityDebounced, channel }, prng(seed + 999), effectParamsDebounced);
+    const imgData = pctx.createImageData(W, H);
+    imgData.data.set(buf);
+    pctx.putImageData(imgData, 0, 0);
+  }, [showPreview, dimsMemo, seed, algos, intensityDebounced, channel, effectParamsDebounced, quality.maxLayers]);
+
+  useEffect(() => { if (showPreview) updatePreview(); }, [updatePreview, showPreview]);
 
   const copy = () => {
     const oc = outRef.current; if (!oc) return;
@@ -232,7 +324,7 @@ export default function VisualTab({ seed, iter, onReroll, mode, setMode, uploade
         <button className="adv-toggle" onClick={() => setShowAdv((v) => !v)}>{showAdv ? '▼' : '▶'} EFFECTS ({IMAGE_EFFECTS.length})</button>
         {showAdv && (
           <div className="algo-scroll">
-            <AlgoPanel effects={IMAGE_EFFECTS} active={algos} onToggle={toggleAlgo} />
+            <AlgoPanel effects={IMAGE_EFFECTS} active={algos} onToggle={toggleAlgo} favorites={favorites} onToggleFavorite={toggleFavorite} />
             {algos.includes('pixelSort') && (
               <>
                 <span className="lbl" style={{ marginTop: 8 }}>SORT CHANNEL</span>
@@ -250,11 +342,15 @@ export default function VisualTab({ seed, iter, onReroll, mode, setMode, uploade
         <div className="div" />
         <div className="sec">
           <span className="lbl">INTENSITY — {(intensity * 100).toFixed(0)}%</span>
-          <input type="range" className="slider" min=".05" max="1" step=".01"
+          <input type="range" className="slider" min="0" max="1" step=".01"
             value={intensity} onChange={(e) => { setPreset(null); setIntensity(parseFloat(e.target.value)); }} />
         </div>
         <div className="div" />
-        <div className="seed-row"><span className="seed-lbl">SEED</span><span className="seed-val">#{seedStr}</span></div>
+        <div className="seed-row"><span className="seed-lbl">SEED</span><span className="seed-val">#{seedStr}</span>
+          <button className={`seed-lock-btn ${seedLocked ? 'locked' : ''}`} onClick={() => onSeedLockChange(!seedLocked)} title={seedLocked ? 'Unlock seed (shuffle will re-roll)' : 'Lock seed (shuffle keeps base pattern)'}>
+            {seedLocked ? '🔒' : '🔓'}
+          </button>
+        </div>
         <button className="reroll-btn" onClick={onReroll} disabled={busy}>{busy ? 'RENDERING...' : '⟳  RE-ROLL'}</button>
         <ShuffleButton onClick={shuffle} disabled={busy} />
         <div className="action-row">
@@ -262,6 +358,18 @@ export default function VisualTab({ seed, iter, onReroll, mode, setMode, uploade
           <button className="act-btn" onClick={() => download('jpg')}>↓ JPG</button>
           <button className="act-btn" onClick={copy}>⎘ COPY</button>
         </div>
+        <div className="div" />
+        <span className="lbl">EXPORT FULL RES</span>
+        <div className="fmt-row">
+          {EXPORT_PRESETS.map((p) => (
+            <button key={p.id} className={`fmt-btn ${exportPreset === p.id ? 'on' : ''}`} onClick={() => setExportPreset(p.id)}>{p.label}</button>
+          ))}
+        </div>
+        <button className="act-btn" onClick={exportFullRes} disabled={exporting}>
+          {exporting ? `EXPORTING... ${(exportProgress * 100).toFixed(0)}%` : `↓ EXPORT ${resolveExportDims(exportPreset).W}×${resolveExportDims(exportPreset).H}`}
+        </button>
+        <button className="adv-toggle" onClick={() => setShowPreview(!showPreview)}>{showPreview ? '▼' : '▶'} LIVE PREVIEW IN FORMAT</button>
+        {showPreview && <canvas ref={previewRef} className="preview-canvas" style={{ width: '100%', marginTop: 8, borderRadius: 4 }} />}
         <CopyRecipeButton getRecipe={() => ({ t: 'visual', s: seed, a: algos, i: intensity, c: channel, p: effectParams, f: { id: fmt.id, w: dims.W, h: dims.H, fit: fmt.fit } })} />
       </aside>
       <main className="main">

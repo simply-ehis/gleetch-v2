@@ -20,7 +20,7 @@ import { useQuality } from '../core/quality.jsx';
 const VIDEO_EFFECTS = getEffectsFor('video');
 const AUDIO_TRACK_EFFECTS = getEffectsFor('audio');
 
-export default function VideoTab({ seed, onReroll, initialRecipe }) {
+export default function VideoTab({ seed, onReroll, initialRecipe, seedLocked, onSeedLockChange }) {
   const { current: quality } = useQuality();
 
   const [mode, setMode] = useState('generate');
@@ -30,9 +30,15 @@ export default function VideoTab({ seed, onReroll, initialRecipe }) {
   const [effectParams, setEffectParams] = useState(initialRecipe?.p ?? {});
   const [preset, setPreset] = useState(null);
   const [showAdv, setShowAdv] = useState(false);
+  const [favorites, setFavorites] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('gleetch-favorites') || '[]'); } catch { return []; }
+  });
   const [showAudioTrack, setShowAudioTrack] = useState(false);
   const [playing, setPlaying] = useState(true);
   const [fqBusy, setFqBusy] = useState(false);
+  const [motionStyle, setMotionStyle] = useState('Calm');
+  const [motionSpeed, setMotionSpeed] = useState(1);
+  const [seamlessLoop, setSeamlessLoop] = useState(false);
 
   const videoRef = useRef(null);
   const workRef = useRef(null);
@@ -282,13 +288,21 @@ export default function VideoTab({ seed, onReroll, initialRecipe }) {
 
   const applyPreset = (k) => { const p = IMAGE_PRESETS[k]; setAlgos(p.algos); setIntensity(p.intensity); setPreset(k); };
   const toggleAlgo = (id) => { setPreset(null); setAlgos((p) => (p.includes(id) ? p.filter((a) => a !== id) : [...p, id])); };
+  const toggleFavorite = (id) => {
+    setFavorites((prev) => {
+      const next = prev.includes(id) ? prev.filter((f) => f !== id) : [...prev, id];
+      try { localStorage.setItem('gleetch-favorites', JSON.stringify(next)); } catch { /* ignore */ }
+      return next;
+    });
+  };
   const toggleAudioAlgo = (id) => audioTrack.setAudioAlgos((p) => (p.includes(id) ? p.filter((a) => a !== id) : [...p, id]));
 
   const shuffle = () => {
     const rng = prng(randomSeed());
     setPreset(null);
-    setAlgos(randomEffectSelection('video', rng, { exclude: algos }));
+    setAlgos(randomEffectSelection('video', rng, { previousChain: algos, realtimeOnly: true }));
     setIntensity(0.3 + rng() * 0.6);
+    if (!seedLocked) onReroll();
   };
 
   useEffect(() => () => {
@@ -324,20 +338,37 @@ export default function VideoTab({ seed, onReroll, initialRecipe }) {
         <span className="lbl">PRESETS</span>
         <PresetPanel presets={IMAGE_PRESETS} active={preset} onSelect={applyPreset} />
         <button className="adv-toggle" onClick={() => setShowAdv((v) => !v)}>{showAdv ? '▼' : '▶'} VISUAL EFFECTS ({VIDEO_EFFECTS.length})</button>
-        {showAdv && <div className="algo-scroll"><AlgoPanel effects={VIDEO_EFFECTS} active={algos} onToggle={toggleAlgo} /></div>}
+        {showAdv && <div className="algo-scroll"><AlgoPanel effects={VIDEO_EFFECTS} active={algos} onToggle={toggleAlgo} favorites={favorites} onToggleFavorite={toggleFavorite} /></div>}
         <ActiveChainList algos={algos} mediaType="video" onReorder={setAlgos} onRemove={(id) => setAlgos((p) => p.filter((a) => a !== id))} effectParams={effectParams} onParamsChange={setEffectParams} />
         <div className="div" />
         <div className="sec">
           <span className="lbl">INTENSITY — {(intensity * 100).toFixed(0)}%</span>
-          <input type="range" className="slider" min=".05" max="1" step=".01"
+          <input type="range" className="slider" min="0" max="1" step=".01"
             value={intensity} onChange={(e) => { setPreset(null); setIntensity(parseFloat(e.target.value)); }} />
         </div>
+        <div className="div" />
+        <span className="lbl">MOTION</span>
+        <div className="motion-row">
+          {['Calm', 'Pulse', 'Glitch', 'Drift', 'Mixed'].map((s) => (
+            <button key={s} className={`motion-btn ${motionStyle === s ? 'on' : ''}`} onClick={() => setMotionStyle(s)}>{s}</button>
+          ))}
+        </div>
+        <div className="sec">
+          <span className="lbl">SPEED — {motionSpeed.toFixed(1)}x</span>
+          <input type="range" className="slider" min="0.1" max="3" step="0.1"
+            value={motionSpeed} onChange={(e) => setMotionSpeed(parseFloat(e.target.value))} />
+        </div>
+        <button className={`fit-btn ${seamlessLoop ? 'on' : ''}`} onClick={() => setSeamlessLoop(!seamlessLoop)}>SEAMLESS LOOP</button>
         <div className="div" />
         {videoFile && mode === 'upload' && (
           <VideoAudioTrackPanel audioTrack={audioTrack} effects={AUDIO_TRACK_EFFECTS} show={showAudioTrack}
             onToggleShow={() => setShowAudioTrack((v) => !v)} onToggleAlgo={toggleAudioAlgo} />
         )}
-        <div className="seed-row"><span className="seed-lbl">SEED</span><span className="seed-val">#{seedStr}</span><span className="seed-lbl" style={{ marginLeft: 6, fontSize: 8, opacity: 0.6 }}>GLOBAL</span></div>
+        <div className="seed-row"><span className="seed-lbl">SEED</span><span className="seed-val">#{seedStr}</span><span className="seed-lbl" style={{ marginLeft: 6, fontSize: 8, opacity: 0.6 }}>GLOBAL</span>
+          <button className={`seed-lock-btn ${seedLocked ? 'locked' : ''}`} onClick={() => onSeedLockChange(!seedLocked)} title={seedLocked ? 'Unlock seed (shuffle will re-roll)' : 'Lock seed (shuffle keeps base pattern)'}>
+            {seedLocked ? '🔒' : '🔓'}
+          </button>
+        </div>
         <button className="reroll-btn" onClick={onReroll}>⟳  NEW SEED (GLOBAL)</button>
         <ShuffleButton onClick={shuffle} />
         <CopyRecipeButton getRecipe={() => ({ t: 'video', s: seed, a: algos, i: intensity, p: effectParams, m: mode })} />

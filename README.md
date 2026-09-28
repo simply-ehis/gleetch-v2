@@ -10,8 +10,8 @@ Started as a corruption/glitch tool. Now a general effects library across
 image, text, audio, video, and CSS/web — corruption is one category among
 several (color/tone, distortion, stylization, painterly, print, geometric,
 textile, photographic tone, corruption, craft). 120 hidden generative
-patterns with infinite procedural layering, 111+ image effects (71 image/video),
-77+ total across media, real video-file export with independent audio-track
+patterns with infinite procedural layering, 67 image/video effects,
+125 total across media, real video-file export with independent audio-track
 processing, and a CSS-generation engine for glitching live websites.
 
 ## Quick Start
