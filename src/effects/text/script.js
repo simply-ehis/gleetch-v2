@@ -8,9 +8,7 @@ const LINEAR_B = '𐀀𐀁𐀂𐀃𐀄𐀅𐀆𐀇𐀈𐀉𐀊𐀋𐀌𐀍𐀎�
 const PHOENICIAN = '𐤀𐤁𐤂𐤃𐤄𐤅𐤆𐤇𐤈𐤉𐤊𐤋𐤌𐤍𐤎𐤏𐤐𐤑𐤒𐤓𐤔𐤕𐤖𐤗𐤘𐤙𐤚𐤛𐤜𐤝𐤞𐤟';
 const MAYAN_NUMERALS = '𝋠𝋡𝋢𝋣𝋤𝋥𝋦𝋧𝋨𝋩𝋪𝋫𝋬𝋭𝋮𝋯𝋰𝋱𝋲𝋳';
 
-const SCRIPT_BLOCKS = { RUNIC, OGHAM, HIEROGLYPHS, CUNEIFORM, LINEAR_B, PHOENICIAN, MAYAN_NUMERALS };
-
-function cipherMap(text, block, rng) {
+function cipherMap(text, block) {
   const map = new Map();
   let idx = 0;
   return codePoints(text).map((c) => {
@@ -19,7 +17,7 @@ function cipherMap(text, block, rng) {
   }).join('');
 }
 
-function shapeMap(text, block, rng) {
+function shapeMap(text, block) {
   const chars = codePoints(block);
   return codePoints(text).map((c) => {
     const code = c.codePointAt(0);

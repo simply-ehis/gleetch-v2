@@ -1,5 +1,6 @@
 import { PATTERNS } from '../patterns/registry.js';
 import { prng } from './rng.js';
+import { makeOffscreenCanvas } from './canvas-utils.js';
 
 // Infinite procedural composition: layers 1-3 patterns with blend.
 // Deterministic from seed. Quality-aware via maxLayers.
@@ -36,8 +37,7 @@ export function renderProcedural(ctx, W, H, seed, opts = {}) {
     return;
   }
   // composite offscreen layers
-  const off = document.createElement('canvas');
-  off.width = W; off.height = H;
+  const off = makeOffscreenCanvas(W, H);
   const octx = off.getContext('2d');
   picks[0].fn(ctx, W, H, prng(seed ^ 0x9e3779b9));
   for (let i = 1; i < picks.length; i++) {

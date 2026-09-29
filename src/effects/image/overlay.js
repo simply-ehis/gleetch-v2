@@ -1,5 +1,6 @@
 import { clamp, lerp } from '../../core/color.js';
 import { PATTERNS } from '../../patterns/registry.js';
+import { makeOffscreenCanvas } from '../../core/canvas-utils.js';
 
 const BLEND_FNS = {
   screen: (a, b) => 255 - ((255 - a) * (255 - b)) / 255,
@@ -11,8 +12,7 @@ const BLEND_FNS = {
 // blends it onto the real image. intensity controls blend opacity (0-1).
 function applyPatternOverlay(buf, W, H, intensity, rng, blendMode) {
   const pattern = PATTERNS[Math.floor(rng() * PATTERNS.length)];
-  const offscreen = document.createElement('canvas');
-  offscreen.width = W; offscreen.height = H;
+  const offscreen = makeOffscreenCanvas(W, H);
   const octx = offscreen.getContext('2d');
   pattern.fn(octx, W, H, rng);
   const patternBuf = octx.getImageData(0, 0, W, H).data;

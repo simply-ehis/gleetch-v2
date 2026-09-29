@@ -2,7 +2,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomEffectSelection, getEffectsFor } from '../src/effects/registry.js';
 import { prng } from '../src/core/rng.js';
-import { randomSeed } from '../src/core/constants.js';
+// NOTE: iteration seeds below are deterministic (12345 + i for the fairness
+// sweep, 0xC0FFEE + i elsewhere) on purpose — these are distribution-shape
+// assertions over N=10000 draws, and drawing fresh crypto randomness per
+// iteration made the suite flaky in CI.
 import { recordShuffle, getFreshness, clearHistory } from '../src/core/shuffle-history.js';
 import { getRating } from '../src/effects/ratings.js';
 
@@ -15,7 +18,7 @@ function shuffleFairness(media) {
   const catOf = Object.fromEntries(pool.map((e) => [e.id, e.category]));
   const isVideo = media === 'video';
   for (let i = 0; i < N; i++) {
-    chain = randomEffectSelection(media, prng(randomSeed()), { exclude: chain, realtimeOnly: isVideo });
+    chain = randomEffectSelection(media, prng(0xC0FFEE + i), { exclude: chain, realtimeOnly: isVideo });
     chain.forEach((id) => { counts[id]++; });
     for (let j = 1; j < chain.length; j++) { pairs++; if (catOf[chain[j]] === catOf[chain[j - 1]]) sameCat++; }
     if (isVideo && chain.some((id) => pool.find((e) => e.id === id)?.realtimeSafe === false)) heavy++;
@@ -31,21 +34,25 @@ test('W1: shuffle fairness with ratings', () => {
   clearHistory();
   for (const media of ['image', 'video', 'text']) {
     const pool = getEffectsFor(media);
-    const counts = Object.fromEntries(pool.map((e) => [e.id, 0]));
     const isVideo = media === 'video';
+    // See w0-foundation.test.mjs: fairness is only measurable over effects
+    // that can actually be picked (realtimeSafe:false are never returned
+    // when realtimeOnly is set).
+    const measurable = isVideo ? pool.filter((e) => e.realtimeSafe !== false) : pool;
+    const counts = Object.fromEntries(measurable.map((e) => [e.id, 0]));
     let chain = [];
     for (let i = 0; i < N; i++) {
       clearHistory();
-      chain = randomEffectSelection(media, prng(randomSeed()), { exclude: chain, realtimeOnly: isVideo });
+      chain = randomEffectSelection(media, prng(12345 + i), { exclude: chain, realtimeOnly: isVideo });
       chain.forEach((id) => { counts[id]++; });
       clearHistory();
     }
     const total = Object.values(counts).reduce((a, b) => a + b, 0);
-    const rsum = pool.reduce((a, e) => a + getRating(e.id), 0);
-    const rows = pool.map((e) => ({ id: e.id, x: counts[e.id] / (total * getRating(e.id) / rsum) }));
+    const rsum = measurable.reduce((a, e) => a + getRating(e.id), 0);
+    const rows = measurable.map((e) => ({ id: e.id, x: counts[e.id] / (total * getRating(e.id) / rsum) }));
     const outside = rows.filter((r) => r.x < 0.75 || r.x > 1.25).length;
-    const target = Math.ceil(pool.length * 0.4);
-    assert.ok(outside <= target, `[${media}] ${outside}/${pool.length} outside 0.75x-1.25x (target <= ${target})`);
+    const target = Math.ceil(measurable.length * 0.4);
+    assert.ok(outside <= target, `[${media}] ${outside}/${measurable.length} outside 0.75x-1.25x (target <= ${target})`);
   }
   clearHistory();
 });
@@ -61,7 +68,7 @@ test('W1: alternation preserved', () => {
     let chain = [];
     for (let i = 0; i < N; i++) {
       clearHistory();
-      chain = randomEffectSelection(media, prng(randomSeed()), { exclude: chain, realtimeOnly: isVideo });
+      chain = randomEffectSelection(media, prng(0xC0FFEE + i), { exclude: chain, realtimeOnly: isVideo });
       for (let j = 1; j < chain.length; j++) { pairs++; if (catOf[chain[j]] === catOf[chain[j - 1]]) sameCat++; }
     }
     const sameCatPct = 100 * sameCat / pairs;
@@ -76,7 +83,7 @@ test('W1: video realtimeOnly filter excludes heavy effects', () => {
   if (heavyIds.length === 0) return;
   let chain = [];
   for (let i = 0; i < 1000; i++) {
-    chain = randomEffectSelection('video', prng(randomSeed()), { exclude: chain, realtimeOnly: true });
+    chain = randomEffectSelection('video', prng(0xC0FFEE + i), { exclude: chain, realtimeOnly: true });
     for (const id of chain) {
       assert.ok(!heavyIds.includes(id), `realtimeOnly chain contains heavy effect: ${id}`);
     }
@@ -101,7 +108,7 @@ test('W1: ratings affect pick frequency', () => {
   const counts = { low: 0, high: 0 };
   let chain = [];
   for (let i = 0; i < N; i++) {
-    chain = randomEffectSelection('image', prng(randomSeed()), { exclude: chain });
+    chain = randomEffectSelection('image', prng(0xC0FFEE + i), { exclude: chain });
     if (chain.includes(lowRated.id)) counts.low++;
     if (chain.includes(highRated.id)) counts.high++;
   }
@@ -115,7 +122,7 @@ test('W1: consecutive shuffles share at most 1 effect on average', () => {
   let comparisons = 0;
   let chain = [];
   for (let i = 0; i < 500; i++) {
-    const next = randomEffectSelection('image', prng(randomSeed()), { exclude: chain });
+    const next = randomEffectSelection('image', prng(0xC0FFEE + i), { exclude: chain });
     const shared = chain.filter((id) => next.includes(id)).length;
     totalShared += shared;
     comparisons++;

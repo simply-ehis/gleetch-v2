@@ -1,5 +1,4 @@
 import { clamp } from '../../core/color.js';
-import { lerpBuffer } from '../../core/blend.js';
 
 function luma(buf, i) {
   return buf[i] * 0.3 + buf[i + 1] * 0.59 + buf[i + 2] * 0.11;

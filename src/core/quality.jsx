@@ -50,8 +50,12 @@ const QUALITY_TIERS = {
 export function QualityProvider({ children }) {
   const [quality, setQuality] = useState(() => {
     if (typeof window !== 'undefined') {
-      const stored = localStorage.getItem('gleetch-quality');
-      if (stored && QUALITY_TIERS[stored]) return stored;
+      // Storage can throw (private mode, disabled cookies, sandboxed
+      // iframe) — a settings read must never crash the whole app.
+      try {
+        const stored = localStorage.getItem('gleetch-quality');
+        if (stored && QUALITY_TIERS[stored]) return stored;
+      } catch { /* fall through to hardware detection */ }
       const cores = navigator.hardwareConcurrency || 4;
       const mem = navigator.deviceMemory;
       if (mem !== undefined) {
@@ -69,7 +73,7 @@ export function QualityProvider({ children }) {
   const [isBatterySaver, setIsBatterySaver] = useState(false);
 
   useEffect(() => {
-    localStorage.setItem('gleetch-quality', quality);
+    try { localStorage.setItem('gleetch-quality', quality); } catch { /* storage unavailable — preference just won't persist */ }
   }, [quality]);
 
   // Battery saver detection
@@ -90,7 +94,7 @@ export function QualityProvider({ children }) {
         battery.removeEventListener('levelchange', check);
         battery.removeEventListener('chargingchange', check);
       };
-    });
+    }).catch(() => { /* Battery API unavailable or denied — stay on the stored tier */ });
   }, []);
 
   // Battery saver forces the low tier while it's active, WITHOUT writing

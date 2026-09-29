@@ -8,7 +8,7 @@ export function boustrophedon(text, intensity, rng) {
   }).join('\n');
 }
 
-export function concreteShape(text, intensity, rng) {
+export function concreteShape(text, intensity) {
   if (intensity <= 0) return text;
   const chars = codePoints(text).filter((c) => c !== '\n' && c !== ' ');
   if (!chars.length) return text;
@@ -20,7 +20,7 @@ export function concreteShape(text, intensity, rng) {
   return lines.join('\n');
 }
 
-export function cipherShift(text, intensity, rng) {
+export function cipherShift(text, intensity) {
   if (intensity <= 0) return text;
   const shift = Math.max(1, Math.floor(intensity * 13));
   return codePoints(text).map((c) => {

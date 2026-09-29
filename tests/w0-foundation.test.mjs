@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import { codePoints, graphemes } from '../src/core/text-utils.js';
 import { applyEffectChain, applyVideoEffectChain, getEffectsFor, randomEffectSelection } from '../src/effects/registry.js';
 import { prng } from '../src/core/rng.js';
-import { randomSeed } from '../src/core/constants.js';
+// NOTE: iteration seeds are deterministic (0xBEEF00 + i) on purpose — these
+// are distribution-shape assertions over N=10000 draws, and fresh crypto
+// randomness per iteration made the suite flaky in CI.
 import { clearHistory } from '../src/core/shuffle-history.js';
 import { getRating } from '../src/effects/ratings.js';
 
@@ -11,22 +13,26 @@ const N = 10000;
 
 function shuffleFairness(media) {
   const pool = getEffectsFor(media);
-  const counts = Object.fromEntries(pool.map((e) => [e.id, 0]));
+  const isVideo = media === 'video';
+  // Fairness is only measurable over effects that can actually be picked:
+  // realtimeSafe:false effects are never returned when realtimeOnly is set,
+  // so counting them as "unfairly unpicked" bakes in a permanent skew.
+  const measurable = isVideo ? pool.filter((e) => e.realtimeSafe !== false) : pool;
+  const counts = Object.fromEntries(measurable.map((e) => [e.id, 0]));
   let chain = [], heavy = 0, pairs = 0, sameCat = 0;
   const catOf = Object.fromEntries(pool.map((e) => [e.id, e.category]));
-  const isVideo = media === 'video';
   for (let i = 0; i < N; i++) {
     clearHistory();
-    chain = randomEffectSelection(media, prng(randomSeed()), { exclude: chain, realtimeOnly: isVideo });
+    chain = randomEffectSelection(media, prng(12345 + i), { exclude: chain, realtimeOnly: isVideo });
     chain.forEach((id) => { counts[id]++; });
     for (let j = 1; j < chain.length; j++) { pairs++; if (catOf[chain[j]] === catOf[chain[j - 1]]) sameCat++; }
     if (isVideo && chain.some((id) => pool.find((e) => e.id === id)?.realtimeSafe === false)) heavy++;
   }
   const total = Object.values(counts).reduce((a, b) => a + b, 0);
-  const rsum = pool.reduce((a, e) => a + getRating(e.id), 0);
-  const rows = pool.map((e) => ({ id: e.id, cat: e.category, x: counts[e.id] / (total * getRating(e.id) / rsum) })).sort((a, b) => b.x - a.x);
+  const rsum = measurable.reduce((a, e) => a + getRating(e.id), 0);
+  const rows = measurable.map((e) => ({ id: e.id, cat: e.category, x: counts[e.id] / (total * getRating(e.id) / rsum) })).sort((a, b) => b.x - a.x);
   const outside = rows.filter((r) => r.x < 0.75 || r.x > 1.25).length;
-  return { pool: pool.length, outside, sameCatPct: 100 * sameCat / pairs, heavyPct: 100 * heavy / N, rows };
+  return { pool: measurable.length, outside, sameCatPct: 100 * sameCat / pairs, heavyPct: 100 * heavy / N, rows };
 }
 
 function loneSurrogates(s) {

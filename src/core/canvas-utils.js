@@ -1,3 +1,14 @@
+// Worker-safe offscreen canvas: document exists on the main thread, but
+// render.worker.js runs without a DOM — OffscreenCanvas covers both.
+export function makeOffscreenCanvas(W, H) {
+  if (typeof document !== 'undefined') {
+    const canvas = document.createElement('canvas');
+    canvas.width = W; canvas.height = H;
+    return canvas;
+  }
+  return new OffscreenCanvas(W, H);
+}
+
 export function loadImageFile(file) {
   return new Promise((resolve, reject) => {
     const img = new Image();

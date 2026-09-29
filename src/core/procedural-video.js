@@ -1,5 +1,6 @@
 import { PATTERNS } from '../patterns/registry.js';
 import { prng, fbm } from './rng.js';
+import { makeOffscreenCanvas } from './canvas-utils.js';
 
 const BLENDS = ['source-over', 'screen', 'multiply', 'overlay', 'soft-light'];
 
@@ -46,6 +47,11 @@ export function renderProceduralVideoFrame(ctx, W, H, seed, timeMs, opts = {}) {
   const driftY = fbm(0, timeMs * 0.0003, seed + 999) * 24 - 12;
   const rot = Math.sin(timeMs * 0.001 + seed) * 0.02; // smooth micro-rotation
 
+  // Time-quantized tick so pattern internals evolve stepwise (~8fps) instead
+  // of flickering every millisecond, while staying fully deterministic for
+  // a given (seed, timeMs). Mixed into the per-layer rng seeds below.
+  const frameTick = Math.max(0, Math.floor(timeMs / 120));
+
   if (layers === 1) {
     ctx.save();
     if (driftX || driftY) ctx.translate(driftX, driftY);
@@ -56,8 +62,7 @@ export function renderProceduralVideoFrame(ctx, W, H, seed, timeMs, opts = {}) {
   }
 
   // Multi-layer: composite with time-varying alpha/blend (still clip-stable pick, frame-varying blend)
-  const off = document.createElement('canvas');
-  off.width = W; off.height = H;
+  const off = makeOffscreenCanvas(W, H);
   const octx = off.getContext('2d');
 
   // Base layer with drift

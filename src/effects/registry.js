@@ -284,11 +284,10 @@ function weightedCategoryPick(rng, categories, pool) {
   return categories[categories.length - 1];
 }
 
-function pickFromCategory(rng, idsByCategory, category, taken, pool) {
+function pickFromCategory(rng, idsByCategory, category, taken) {
   const candidates = (idsByCategory.get(category) || []).filter((id) => !taken.has(id));
   if (!candidates.length) return null;
   const weighted = candidates.map((id) => {
-    const effect = pool.find((e) => e.id === id);
     return { id, weight: getRating(id) * getFreshness(id) };
   });
   const total = weighted.reduce((s, w) => s + w.weight, 0);
@@ -373,7 +372,7 @@ export function randomEffectSelection(mediaType, rng, options = {}) {
       const others = categories.filter((c) => c !== lastCategory);
       category = others.length ? weightedCategoryPick(rng, others, pool) : lastCategory;
     }
-    const id = pickFromCategory(rng, byCategory, category, taken, pool);
+    const id = pickFromCategory(rng, byCategory, category, taken);
     if (id === null) {
       const rest = pool.filter((e) => !taken.has(e.id));
       if (!rest.length) break;

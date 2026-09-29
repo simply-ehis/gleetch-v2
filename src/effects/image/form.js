@@ -2,10 +2,6 @@ import { clamp } from '../../core/color.js';
 import { lerpBuffer } from '../../core/blend.js';
 import { hsl2rgb } from '../../core/color.js';
 
-function luma(buf, i) {
-  return buf[i] * 0.3 + buf[i + 1] * 0.59 + buf[i + 2] * 0.11;
-}
-
 export function meshGradient(buf, W, H, intensity, rng) {
   if (intensity <= 0) return new Uint8ClampedArray(buf);
   const full = new Uint8ClampedArray(buf.length);

@@ -37,7 +37,7 @@ export function inkBleed(text, intensity, rng) {
   }).join('');
 }
 
-export function frameCrawl(text, intensity, rng) {
+export function frameCrawl(text, intensity) {
   if (intensity <= 0) return text;
   const chars = codePoints(text).filter((c) => c !== '\n' && c !== ' ');
   if (!chars.length) return text;
