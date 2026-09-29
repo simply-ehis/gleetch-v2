@@ -18,6 +18,7 @@ export default function TextTab({ seed, onReroll, initialRecipe, seedLocked, onS
   const [input, setInput] = useState(SAMPLE);
   const [algos, setAlgos] = useState(initialRecipe?.a ?? ['homoglyph', 'scramble']);
   const [intensity, setIntensity] = useState(initialRecipe?.i ?? 0.4);
+  const [effectParams, setEffectParams] = useState(initialRecipe?.p ?? {});
   const [preset, setPreset] = useState(null);
   const [showAdv, setShowAdv] = useState(false);
   const [favorites, setFavorites] = useState(() => {
@@ -26,8 +27,8 @@ export default function TextTab({ seed, onReroll, initialRecipe, seedLocked, onS
 
   const output = useMemo(() => {
     const rng = prng(seed);
-    return applyEffectChain(input, algos, { mediaType: 'text', intensity }, rng);
-  }, [input, algos, intensity, seed]);
+    return applyEffectChain(input, algos, { mediaType: 'text', intensity }, rng, effectParams);
+  }, [input, algos, intensity, seed, effectParams]);
 
   const applyPreset = (k) => { const p = TEXT_PRESETS[k]; setAlgos(p.algos); setIntensity(p.intensity); setPreset(k); };
   const toggleAlgo = (id) => { setPreset(null); setAlgos((p) => (p.includes(id) ? p.filter((a) => a !== id) : [...p, id])); };
@@ -70,7 +71,7 @@ export default function TextTab({ seed, onReroll, initialRecipe, seedLocked, onS
         <PresetPanel presets={TEXT_PRESETS} active={preset} onSelect={applyPreset} />
         <button className="adv-toggle" onClick={() => setShowAdv((v) => !v)}>{showAdv ? '▼' : '▶'} EFFECTS ({TEXT_EFFECTS.length})</button>
         {showAdv && <div className="algo-scroll"><AlgoPanel effects={TEXT_EFFECTS} active={algos} onToggle={toggleAlgo} favorites={favorites} onToggleFavorite={toggleFavorite} /></div>}
-        <ActiveChainList algos={algos} mediaType="text" onReorder={setAlgos} onRemove={(id) => setAlgos((p) => p.filter((a) => a !== id))} />
+        <ActiveChainList algos={algos} mediaType="text" onReorder={setAlgos} onRemove={(id) => setAlgos((p) => p.filter((a) => a !== id))} effectParams={effectParams} onParamsChange={setEffectParams} />
         <div className="div" />
         <div className="sec">
           <span className="lbl">INTENSITY — {(intensity * 100).toFixed(0)}%</span>
@@ -112,7 +113,7 @@ export default function TextTab({ seed, onReroll, initialRecipe, seedLocked, onS
             <button className="act-btn" onClick={exportPoster}>↓ EXPORT POSTER (1080×1920)</button>
           </>
         )}
-        <CopyRecipeButton getRecipe={() => ({ t: 'text', s: seed, a: algos, i: intensity })} />
+        <CopyRecipeButton getRecipe={() => ({ t: 'text', s: seed, a: algos, i: intensity, p: effectParams })} />
       </aside>
       <main className="main" style={{ flexDirection: 'column' }}>
         <div className="text-areas">

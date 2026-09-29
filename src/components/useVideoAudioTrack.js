@@ -11,18 +11,22 @@ export function useVideoAudioTrack() {
   const [audioEffectParams, setAudioEffectParams] = useState({});
   const [decoding, setDecoding] = useState(false);
   const audioCtxRef = useRef(null);
+  const loadGenRef = useRef(0);
 
   const extract = useCallback(async (file) => {
     setAudioBuffer(null);
     setDecoding(true);
+    // Generation guard (same race as AudioTab.loadAudio): a second video
+    // loaded while this decode is in flight must win.
+    const gen = ++loadGenRef.current;
     try {
       if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') audioCtxRef.current = new AudioContext();
       const decoded = await audioCtxRef.current.decodeAudioData(await file.arrayBuffer());
-      setAudioBuffer(decoded);
+      if (gen === loadGenRef.current) setAudioBuffer(decoded);
     } catch {
-      setAudioBuffer(null);
+      if (gen === loadGenRef.current) setAudioBuffer(null);
     }
-    setDecoding(false);
+    if (gen === loadGenRef.current) setDecoding(false);
   }, []);
 
   // Same AudioContext-exhaustion risk as AudioTab if this isn't closed on

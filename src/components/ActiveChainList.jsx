@@ -62,9 +62,8 @@ function ParamControls({ effect, values, onChange }) {
 // that order directly, instead of the only previous option (deselect +
 // reselect in the desired sequence, which is clumsy and easy to get wrong).
 //
-// effectParams/onParamsChange are optional — tabs whose effects never
-// declare `params` (Text/Audio/Web today) can omit both and this renders
-// exactly as it always did, nothing extra, nothing missing.
+// effectParams/onParamsChange are optional — a tab that omits both simply
+// renders no per-effect controls. Every tab wires them today.
 export default function ActiveChainList({ algos, mediaType, onReorder, onRemove, effectParams = {}, onParamsChange }) {
   if (!algos.length) return null;
 

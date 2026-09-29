@@ -253,6 +253,9 @@ export default function VisualTab({ seed, iter, onReroll, mode, setMode, uploade
   const copy = () => {
     const oc = outRef.current; if (!oc) return;
     oc.toBlob(async (blob) => {
+      // toBlob yields null when the canvas has no image data to encode —
+      // fall back to download instead of crashing on a null Blob.
+      if (!blob) { download(); return; }
       try { await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]); }
       catch { download(); }
     });
@@ -288,7 +291,11 @@ export default function VisualTab({ seed, iter, onReroll, mode, setMode, uploade
 
         {mode === 'upload' ? (
           <UploadZone label="IMAGE" subLabel="click · paste · drag & drop" loaded={!!uploadedImg}
-            onFile={async (f) => { if (f) setUploadedImg(await loadImageFile(f)); }} />
+            onFile={async (f) => {
+              if (!f) return;
+              try { setUploadedImg(await loadImageFile(f)); }
+              catch (e) { console.error('Image load error:', e); }
+            }} />
         ) : (
           <div className="gen-box">
             <div className="gen-icon">⟳</div>

@@ -23,7 +23,10 @@ const TABS = [
 function AppInner() {
   const { cycleQuality, current, isBatterySaver } = useQuality();
   const [incomingRecipe] = useState(() => getRecipeFromURL());
-  const [tab, setTab] = useState(incomingRecipe?.t ?? 'visual');
+  // A crafted ?recipe= URL can carry a t value that matches no tab — fall
+  // back to 'visual' so a shared link never renders an empty page.
+  const initialTab = TABS.some(([id]) => id === incomingRecipe?.t) ? incomingRecipe.t : 'visual';
+  const [tab, setTab] = useState(initialTab);
   const [seed, setSeed] = useState(incomingRecipe?.s ?? randomSeed());
   const [iter, setIter] = useState(0);
   const [burst, setBurst] = useState(false);
@@ -45,13 +48,19 @@ function AppInner() {
 
   useEffect(() => {
     const onPaste = async (e) => {
-      for (const item of e.clipboardData.items) {
-        if (item.type.startsWith('image/')) {
-          const img = await loadImageFile(item.getAsFile());
+      // clipboardData is null in some browsers/contexts; getAsFile can also
+      // return null — either must be a no-op, never a TypeError.
+      const items = e.clipboardData?.items ?? [];
+      for (const item of items) {
+        if (!item.type.startsWith('image/')) continue;
+        const file = item.getAsFile();
+        if (!file) continue;
+        try {
+          const img = await loadImageFile(file);
           setUploadedImg(img);
           setVMode('upload');
           setTab('visual');
-        }
+        } catch { /* undecodable paste — keep current content */ }
       }
     };
     window.addEventListener('paste', onPaste);

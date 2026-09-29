@@ -52,18 +52,24 @@ export default function AudioTab({ seed, onReroll, initialRecipe, seedLocked, on
   const waveCanvasRef = useRef(null);
   const audioCtxRef = useRef(null);
   const audioSrcRef = useRef(null);
+  const loadGenRef = useRef(0);
 
   const loadAudio = useCallback(async (file) => {
     if (!file) return;
     setBusy(true);
+    // Generation guard: a second upload started while this decode is in
+    // flight must win — otherwise the slower (older) file overwrites the
+    // newer one when it finishes.
+    const gen = ++loadGenRef.current;
     try {
       if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') audioCtxRef.current = new AudioContext();
       const decoded = await audioCtxRef.current.decodeAudioData(await file.arrayBuffer());
+      if (gen !== loadGenRef.current) return;
       setAudioBuffer(decoded);
       setDuration(decoded.duration);
       setTimeout(() => waveCanvasRef.current && drawWaveform(waveCanvasRef.current, decoded, quality.waveformSteps), 50);
     } catch (e) { console.error('Audio load error:', e); }
-    setBusy(false);
+    if (gen === loadGenRef.current) setBusy(false);
   }, [quality.waveformSteps]);
 
   const runAudio = useCallback(async () => {

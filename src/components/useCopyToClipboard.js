@@ -12,13 +12,32 @@ export function useCopyToClipboard(resetMs = 1500) {
   const [copied, setCopied] = useState(false);
   const timeoutRef = useRef(null);
 
-  const copy = useCallback((text) => {
-    navigator.clipboard.writeText(text).then(() => {
-      setCopied(true);
-      if (timeoutRef.current) clearTimeout(timeoutRef.current);
-      timeoutRef.current = setTimeout(() => setCopied(false), resetMs);
-    }).catch(() => {});
+  const flagCopied = useCallback(() => {
+    setCopied(true);
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    timeoutRef.current = setTimeout(() => setCopied(false), resetMs);
   }, [resetMs]);
+
+  const copy = useCallback((text) => {
+    // navigator.clipboard is undefined on insecure contexts (plain http://
+    // on LAN, some webviews) — property access alone would throw. Fall back
+    // to the legacy execCommand path so COPY buttons still work there.
+    const modern = navigator.clipboard?.writeText;
+    if (modern) {
+      modern.call(navigator.clipboard, text).then(flagCopied).catch(() => {});
+      return;
+    }
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      if (document.execCommand('copy')) flagCopied();
+      document.body.removeChild(ta);
+    } catch { /* clipboard unavailable — button just won't flip */ }
+  }, [flagCopied]);
 
   useEffect(() => () => { if (timeoutRef.current) clearTimeout(timeoutRef.current); }, []);
 

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { getEffectsFor } from '../src/effects/registry.js';
+import { getEffectsFor, applyEffectChain } from '../src/effects/registry.js';
 import { prng } from '../src/core/rng.js';
 
 const text = 'The old king wrote his name in stone and left it for the sea to read.';
@@ -76,4 +76,15 @@ test('cipherShift shifts letters', () => {
   const cipher = txt.find((e) => e.id === 'cipherShift');
   const out = cipher.fn('abc', 1, prng(42), {});
   assert.notEqual(out, 'abc', 'cipherShift should change letters');
+});
+
+test('text chain applies per-effect params (TextTab wiring)', () => {
+  // Regression: TextTab used to drop effectParams entirely, so script-mode
+  // selects (and shared ?recipe= links carrying them) were silently ignored.
+  const ctx = { mediaType: 'text', intensity: 1 };
+  const def = applyEffectChain('abc', ['runify'], ctx, prng(42), {});
+  const shaped = applyEffectChain('abc', ['runify'], ctx, prng(42), { runify: { mode: 'shape' } });
+  assert.notEqual(shaped, def, 'runify mode param had no effect through the chain path');
+  const bogus = applyEffectChain('abc', ['runify'], ctx, prng(42), { runify: { mode: 'nope' } });
+  assert.equal(bogus, def, 'invalid mode should sanitize back to the default');
 });
