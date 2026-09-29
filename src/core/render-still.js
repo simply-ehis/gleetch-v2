@@ -36,24 +36,23 @@ function applyDither(buf, W, H) {
   }
 }
 
-export const EXPORT_PRESETS = [
-  { id: 'phone', label: 'PHONE', ratio: 9 / 16, longEdge: 2796 },
-  { id: '1080p', label: '1080p', ratio: 9 / 16, longEdge: 2160 },
-  { id: '1440p', label: '1440p', ratio: 9 / 16, longEdge: 3200 },
-  { id: '4k', label: '4K', ratio: 9 / 16, longEdge: 4096 },
-  { id: 'square', label: 'SQUARE', ratio: 1, longEdge: 2048 },
-  { id: 'wide', label: 'WIDE', ratio: 16 / 9, longEdge: 3840 },
+export const EXPORT_SCALES = [
+  { id: 'x1', label: '1×', scale: 1 },
+  { id: 'x2', label: '2×', scale: 2 },
+  { id: 'x3', label: '3×', scale: 3 },
+  { id: 'x4', label: '4×', scale: 4 },
 ];
 
-export function resolveExportDims(presetId, customW, customH) {
-  if (presetId === 'custom') {
-    const W = Math.max(64, Math.min(4096, Math.round(customW) || 1024));
-    const H = Math.max(64, Math.min(4096, Math.round(customH) || 1024));
-    return { W, H };
-  }
-  const preset = EXPORT_PRESETS.find((p) => p.id === presetId);
-  if (!preset) return { W: 1024, H: 1024 };
-  const longEdge = preset.longEdge;
-  if (preset.ratio >= 1) return { W: longEdge, H: Math.round(longEdge / preset.ratio) };
-  return { W: Math.round(longEdge * preset.ratio), H: longEdge };
+// Export sizing scales the CURRENT format dims (whatever FORMAT row the
+// user picked above — 1:1, 16:9, custom, …), preserving aspect ratio, with
+// the long edge capped at 4096. Fixed-aspect presets (the old PHONE/4K row)
+// are gone on purpose: they silently forced 9:16 on every composition.
+export function resolveExportDims(scaleId, srcW, srcH) {
+  const entry = EXPORT_SCALES.find((s) => s.id === scaleId) ?? EXPORT_SCALES[2];
+  const W0 = Math.max(1, Math.round(srcW) || 512);
+  const H0 = Math.max(1, Math.round(srcH) || 512);
+  const capScale = Math.min(entry.scale, 4096 / Math.max(W0, H0));
+  const W = Math.max(64, Math.round(W0 * capScale));
+  const H = Math.max(64, Math.round(H0 * capScale));
+  return { W, H, capped: capScale < entry.scale };
 }

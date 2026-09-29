@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { prng } from '../core/rng.js';
-import { loadImageFile, drawImageCover } from '../core/canvas-utils.js';
+import { loadImageFile, drawImageCover, drawFittedImage } from '../core/canvas-utils.js';
 import { FORMATS, resolveDims, clampDim } from '../core/formats.js';
 import { renderProcedural } from '../core/procedural.js';
 import { getEffectsFor, applyEffectChain, randomEffectSelection, isNoOp } from '../effects/registry.js';
@@ -14,7 +14,7 @@ import ScrambleText from './ScrambleText.jsx';
 import ActiveChainList from './ActiveChainList.jsx';
 import CopyRecipeButton from './CopyRecipeButton.jsx';
 import { useQuality } from '../core/quality.jsx';
-import { renderStill, EXPORT_PRESETS, resolveExportDims } from '../core/render-still.js';
+import { renderStill, EXPORT_SCALES, resolveExportDims } from '../core/render-still.js';
 
 const IMAGE_EFFECTS = getEffectsFor('image');
 
@@ -44,7 +44,7 @@ export default function VisualTab({ seed, iter, onReroll, mode, setMode, uploade
   const [favorites, setFavorites] = useState(() => {
     try { return JSON.parse(localStorage.getItem('gleetch-favorites') || '[]'); } catch { return []; }
   });
-  const [exportPreset, setExportPreset] = useState('phone');
+  const [exportScale, setExportScale] = useState('x4');
   const [exporting, setExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
   const [showPreview, setShowPreview] = useState(false);
@@ -191,38 +191,58 @@ export default function VisualTab({ seed, iter, onReroll, mode, setMode, uploade
   const exportFullRes = () => {
     setExporting(true);
     setExportProgress(0);
-    const { W, H } = resolveExportDims(exportPreset);
+    // Scale the CURRENT format dims (whatever the FORMAT row above holds),
+    // preserving aspect — not a fixed-aspect preset.
+    const { W, H } = resolveExportDims(exportScale, dims.W, dims.H);
+    const hasUpload = mode === 'upload' && uploadedImg;
     const useWorker = typeof Worker !== 'undefined' && W * H > 512 * 512;
+    const saveBlob = (blob) => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `gleetch-${String(seed).padStart(6, '0')}-${W}x${H}.png`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setExporting(false);
+    };
+    const fail = (err) => { console.error('Export failed:', err); setExporting(false); };
     if (useWorker) {
       const worker = new Worker(new URL('../core/render.worker.js', import.meta.url), { type: 'module' });
       worker.onmessage = (e) => {
         if (e.data.type === 'progress') setExportProgress(e.data.value);
-        else if (e.data.type === 'done') {
-          const url = URL.createObjectURL(e.data.blob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = `gleetch-${String(seed).padStart(6, '0')}-${W}x${H}.png`;
-          a.click();
-          setTimeout(() => URL.revokeObjectURL(url), 1000);
-          worker.terminate();
-          setExporting(false);
-        } else if (e.data.type === 'error') {
-          console.error('Export failed:', e.data.message);
-          worker.terminate();
-          setExporting(false);
-        }
+        else if (e.data.type === 'done') { worker.terminate(); saveBlob(e.data.blob); }
+        else if (e.data.type === 'error') { worker.terminate(); fail(new Error(e.data.message)); }
       };
-      worker.postMessage({ seed, algos, intensity, channel, effectParams, W, H, maxLayers: quality.maxLayers ?? 3 });
+      const base = { seed, algos, intensity, channel, effectParams, W, H, maxLayers: quality.maxLayers ?? 3, fit: fmt.fit };
+      if (hasUpload) {
+        // Transfer the upload as an ImageBitmap so the worker starts from
+        // the user's image at export size (previously it always rendered
+        // procedural, exporting the wrong content in upload mode).
+        createImageBitmap(uploadedImg).then((bitmap) => {
+          worker.postMessage({ ...base, source: bitmap }, [bitmap]);
+        }).catch((err) => { worker.terminate(); fail(err); });
+      } else {
+        worker.postMessage(base);
+      }
     } else {
       setTimeout(() => {
         try {
-          const buf = renderStill({ seed, algos, intensity, channel, effectParams, W, H, maxLayers: quality.maxLayers ?? 3, dither: true });
           const canvas = document.createElement('canvas');
           canvas.width = W; canvas.height = H;
           const ctx = canvas.getContext('2d');
-          const imgData = ctx.createImageData(W, H);
-          imgData.data.set(buf);
-          ctx.putImageData(imgData, 0, 0);
+          if (hasUpload) {
+            drawFittedImage(ctx, uploadedImg, W, H, fmt.fit);
+            let buf = ctx.getImageData(0, 0, W, H).data;
+            buf = applyEffectChain(buf, algos, { mediaType: 'image', W, H, intensity, channel }, prng(seed + 999), effectParams);
+            const imgData = ctx.createImageData(W, H);
+            imgData.data.set(buf);
+            ctx.putImageData(imgData, 0, 0);
+          } else {
+            const buf = renderStill({ seed, algos, intensity, channel, effectParams, W, H, maxLayers: quality.maxLayers ?? 3, dither: true });
+            const imgData = ctx.createImageData(W, H);
+            imgData.data.set(buf);
+            ctx.putImageData(imgData, 0, 0);
+          }
           const a = document.createElement('a');
           a.href = canvas.toDataURL('image/png');
           a.download = `gleetch-${String(seed).padStart(6, '0')}-${W}x${H}.png`;
@@ -264,12 +284,16 @@ export default function VisualTab({ seed, iter, onReroll, mode, setMode, uploade
   const onDropImage = async (e) => {
     e.preventDefault();
     const f = e.dataTransfer.files[0];
-    if (f?.type.startsWith('image/')) { setUploadedImg(await loadImageFile(f)); setMode('upload'); }
+    if (!f?.type.startsWith('image/')) return;
+    try { setUploadedImg(await loadImageFile(f)); setMode('upload'); }
+    catch (err) { console.error('Image load error:', err); }
   };
 
   const seedStr = String(seed).padStart(6, '0');
 
   const fmtId = fmt.id;
+  // Export dims scale the current format (recomputed every render — pure math).
+  const exportDims = resolveExportDims(exportScale, dims.W, dims.H);
   const applyFmt = (id) => {
     if (id === 'custom') {
       const w = clampDim(parseInt(customW, 10) || fmt.w);
@@ -366,15 +390,16 @@ export default function VisualTab({ seed, iter, onReroll, mode, setMode, uploade
           <button className="act-btn" onClick={copy}>⎘ COPY</button>
         </div>
         <div className="div" />
-        <span className="lbl">EXPORT FULL RES</span>
+        <span className="lbl">EXPORT FULL RES — scales the format above</span>
         <div className="fmt-row">
-          {EXPORT_PRESETS.map((p) => (
-            <button key={p.id} className={`fmt-btn ${exportPreset === p.id ? 'on' : ''}`} onClick={() => setExportPreset(p.id)}>{p.label}</button>
+          {EXPORT_SCALES.map((p) => (
+            <button key={p.id} className={`fmt-btn ${exportScale === p.id ? 'on' : ''}`} onClick={() => setExportScale(p.id)}>{p.label}</button>
           ))}
         </div>
         <button className="act-btn" onClick={exportFullRes} disabled={exporting}>
-          {exporting ? `EXPORTING... ${(exportProgress * 100).toFixed(0)}%` : `↓ EXPORT ${resolveExportDims(exportPreset).W}×${resolveExportDims(exportPreset).H}`}
+          {exporting ? `EXPORTING... ${(exportProgress * 100).toFixed(0)}%` : `↓ EXPORT ${exportDims.W}×${exportDims.H}`}
         </button>
+        {exportDims.capped && <div className="sidebar-hint">capped at 4096 long edge</div>}
         <button className="adv-toggle" onClick={() => setShowPreview(!showPreview)}>{showPreview ? '▼' : '▶'} LIVE PREVIEW IN FORMAT</button>
         {showPreview && <canvas ref={previewRef} className="preview-canvas" style={{ width: '100%', marginTop: 8, borderRadius: 4 }} />}
         <CopyRecipeButton getRecipe={() => ({ t: 'visual', s: seed, a: algos, i: intensity, c: channel, p: effectParams, f: { id: fmt.id, w: dims.W, h: dims.H, fit: fmt.fit } })} />

@@ -9,6 +9,23 @@ export function makeOffscreenCanvas(W, H) {
   return new OffscreenCanvas(W, H);
 }
 
+// Draws an image into a W×H canvas with cover/contain fit (cover fills and
+// crops overflow, contain letterboxes on #0A0A1C). Shared by the live
+// preview and the full-res export so both frame the upload identically.
+export function drawFittedImage(ctx, img, W, H, fit = 'cover') {
+  const iw = img.naturalWidth || img.width || 1;
+  const ih = img.naturalHeight || img.height || 1;
+  if (fit === 'contain') {
+    ctx.fillStyle = '#0A0A1C';
+    ctx.fillRect(0, 0, W, H);
+    const s = Math.min(W / iw, H / ih);
+    ctx.drawImage(img, (W - iw * s) / 2, (H - ih * s) / 2, iw * s, ih * s);
+  } else {
+    const s = Math.max(W / iw, H / ih);
+    ctx.drawImage(img, (W - iw * s) / 2, (H - ih * s) / 2, iw * s, ih * s);
+  }
+}
+
 export function loadImageFile(file) {
   return new Promise((resolve, reject) => {
     const img = new Image();
