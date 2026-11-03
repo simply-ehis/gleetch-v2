@@ -1,9 +1,9 @@
 @import url('https://fonts.googleapis.com/css2?family=VT323&family=Share+Tech+Mono&display=swap');
 *{box-sizing:border-box;margin:0;padding:0;}
-body{background:#14142A;}
-.root{font-family:'Share Tech Mono','Courier New',monospace;background:#14142A;color:#E0E0FF;height:100vh;height:100dvh;display:flex;flex-direction:column;overflow:hidden;}
-.header{padding:18px 22px 14px;border-bottom:1px solid #2A2A50;display:flex;align-items:flex-end;gap:20px;flex-wrap:wrap;}
-.logo{font-family:'VT323',monospace;font-size:48px;letter-spacing:5px;color:#FF2D6B;line-height:1;cursor:default;animation:idle 10s steps(1) infinite;}
+body{background:#0b0d10;}
+.root{font-family:'Share Tech Mono','Courier New',monospace;background:#0b0d10;color:#e8e6e1;height:100vh;height:100dvh;display:flex;flex-direction:column;overflow:hidden;}
+.header{padding:18px 22px 14px;border-bottom:1px solid #1f2228;display:flex;align-items:flex-end;gap:20px;flex-wrap:wrap;}
+.logo{font-family:'VT323',monospace;font-size:48px;letter-spacing:5px;color:var(--accent,#ff2d6b);line-height:1;cursor:default;}
 .logo.burst{animation:burst .5s steps(1);}
 .logo-img{animation:idle 10s steps(1) infinite; image-rendering:auto; }
 .logo-img.burst{animation:burst .5s steps(1);}
@@ -11,11 +11,11 @@ body{background:#14142A;}
 @keyframes burst{0%{text-shadow:4px 0 #FF2D6B,-4px 0 #00E5FF;transform:translateX(-2px);}20%{text-shadow:-4px 0 #FF2D6B,4px 0 #00E5FF;transform:translateX(3px);}40%{text-shadow:2px 0 #FFB800;transform:skewX(-4deg);}100%{text-shadow:none;transform:none;}}
 .tagline{font-size:9px;color:#3A3A70;letter-spacing:2px;padding-bottom:4px;}
 .tabs{display:flex;gap:0;margin-left:auto;align-self:stretch;align-items:stretch;}
-.tab-btn{background:transparent;border:none;border-bottom:2px solid transparent;color:#4A4A80;padding:0 18px;cursor:pointer;font-family:inherit;font-size:10px;letter-spacing:2px;transition:all .15s;}
-.tab-btn:hover{color:#E0E0FF;}
-.tab-btn.on{color:#FF2D6B;border-bottom-color:#FF2D6B;}
+.tab-btn{background:transparent;border:none;border-bottom:2px solid transparent;color:#8a8f98;padding:0 18px;cursor:pointer;font-family:inherit;font-size:10px;letter-spacing:2px;}
+.tab-btn:hover{color:#e8e6e1;}
+.tab-btn.on{color:var(--accent,#ff2d6b);border-bottom-color:var(--accent,#ff2d6b);}
 .body{display:flex;flex:1;min-height:0;overflow:hidden;position:relative;}
-.sidebar{width:var(--sidebar-width,280px);flex-shrink:0;background:#18183A;border-right:1px solid #252550;padding:16px;overflow-y:auto;overflow-x:hidden;display:flex;flex-direction:column;gap:0;scrollbar-width:auto;scrollbar-color:#00E5FF #1E1E45;}
+.sidebar{width:var(--sidebar-width,280px);flex-shrink:0;background:#14171c;border-right:1px solid #1f2228;padding:16px;overflow-y:auto;overflow-x:hidden;display:flex;flex-direction:column;gap:0;scrollbar-width:auto;scrollbar-color:#00E5FF #1E1E45;}
 /* The sidebar as a whole must scroll when its content (upload zone,
    presets, active chain, intensity, seed, action buttons) exceeds the
    viewport — previously only .algo-scroll scrolled and everything else
@@ -307,3 +307,5 @@ body{background:#14142A;}
   .tab-btn{padding:10px 11px;font-size:9px;}
   .preset-btn{min-width:0;}
 }
+ .layers-panel{display:flex;flex-direction:column;gap:8px;} .layer-section{border:1px solid #1f2228;border-radius:6px;overflow:hidden;} .layer-header{width:100%;text-align:left;background:#14171c;border:none;color:#e8e6e1;padding:8px 10px;cursor:pointer;font-family:inherit;font-size:11px;letter-spacing:1px;} .layer-header:hover{background:#1a1e26;} .layer-body{padding:8px;background:#0b0d10;} .base-grid{display:grid;grid-template-columns:repeat(auto-fill,72px);gap:6px;} .base-thumb{display:flex;flex-direction:column;align-items:center;gap:2px;} .base-thumb canvas{border:1px solid #1f2228;border-radius:4px;} .base-lbl{font-size:8px;color:#8a8f98;text-align:center;max-width:72px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;} .effect-chips{display:flex;flex-wrap:wrap;gap:4px;} .chip{background:#1f2228;color:#e8e6e1;padding:2px 6px;border-radius:4px;font-size:9px;display:flex;align-items:center;gap:4px;} .chip button{background:none;border:none;color:#8a8f98;cursor:pointer;padding:0;}   .colour-pass{display:flex;align-items:center;gap:6px;margin-bottom:6px;} .colour-pass select{background:#14171c;color:#e8e6e1;border:1px solid #1f2228;padding:2px 4px;font-size:9px;}
+.base-info{display:flex;justify-content:space-between;gap:8px;margin-bottom:4px;} .base-lbl{font-size:10px;color:#8a8f98;letter-spacing:.5px;} .base-name{font-size:10px;color:#e8e6e1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}

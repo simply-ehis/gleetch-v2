@@ -5,6 +5,8 @@ import { p_oscilloscope,p_spectrum,p_waveform,p_tv_static,p_circuit,p_radar,p_ha
 import { p_flow_field,p_react_diff,p_dla,p_gravity,p_magnetic,p_lsystem,p_cellular,p_particle_burst,p_plasma,p_point_cloud,p_ifs_fern,p_brownian,p_noise_field,p_perlin_terrain,p_galaxy } from './generative.js';
 import { p_rothko,p_pollock,p_pointillism,p_watercolor,p_neon_glow,p_kaleidoscope,p_stained_glass,p_gen_art,p_color_wash,p_glitch_noise } from './artistic.js';
 import { TEXTURE_MINERAL_PATTERNS } from './texture-mineral.js';
+import { CANVAS_BASES_EXTRA } from './canvas-bases-extra.js';
+import { ARTISTIC_BASES } from './artistic-bases.js';
 import { TEXTURE_ORGANIC_PATTERNS } from './texture-organic.js';
 
 // Central registry of all 100 generative patterns, each tagged with its family.
@@ -114,6 +116,8 @@ export const PATTERNS = [
   {id:'glitch_noise',label:'Glitch Noise',fn:p_glitch_noise,family:"artistic"},
   ...TEXTURE_MINERAL_PATTERNS,
   ...TEXTURE_ORGANIC_PATTERNS,
+  ...ARTISTIC_BASES,
+  ...CANVAS_BASES_EXTRA,
 ];
 export function getPatternById(id) {
   return PATTERNS.find((p) => p.id === id);

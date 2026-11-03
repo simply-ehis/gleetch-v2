@@ -47,7 +47,7 @@ export function overlayBlend(buf, W, H, intensity, rng) {
 // full-quality single-frame capture path applies them unfiltered, since a
 // one-off still frame has no real-time deadline to miss.
 export const OVERLAY_EFFECTS = [
-  { id: 'overlayScreen', label: 'OVERLAY: SCREEN', hint: 'lighten with a random pattern (full-quality frame capture only)', category: 'overlay', mediaTypes: ['image', 'video'], realtimeSafe: false, fn: overlayScreen },
-  { id: 'overlayMultiply', label: 'OVERLAY: MULTIPLY', hint: 'darken with a random pattern (full-quality frame capture only)', category: 'overlay', mediaTypes: ['image', 'video'], realtimeSafe: false, fn: overlayMultiply },
-  { id: 'overlayBlend', label: 'OVERLAY: BLEND', hint: 'contrast-blend a random pattern (full-quality frame capture only)', category: 'overlay', mediaTypes: ['image', 'video'], realtimeSafe: false, fn: overlayBlend },
+  { id: 'overlayScreen', label: 'OVERLAY: SCREEN', hint: 'lighten with a random pattern (full-quality frame capture only)', category: 'overlay', mediaTypes: ['image', 'video'], realtimeSafe: false, slot: 'overlay', cost: 5, motion: { kind: 'drift', target: 'offset', speed: 0.1 }, fn: overlayScreen },
+  { id: 'overlayMultiply', label: 'OVERLAY: MULTIPLY', hint: 'darken with a random pattern (full-quality frame capture only)', category: 'overlay', mediaTypes: ['image', 'video'], realtimeSafe: false, slot: 'overlay', cost: 5, motion: { kind: 'drift', target: 'offset', speed: 0.1 }, fn: overlayMultiply },
+  { id: 'overlayBlend', label: 'OVERLAY: BLEND', hint: 'contrast-blend a random pattern (full-quality frame capture only)', category: 'overlay', mediaTypes: ['image', 'video'], realtimeSafe: false, slot: 'overlay', cost: 5, motion: { kind: 'drift', target: 'offset', speed: 0.1 }, fn: overlayBlend },
 ];

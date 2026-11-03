@@ -74,12 +74,12 @@ export function hueRotate(buf, W, H, intensity, rng) {
 }
 
 export const COLOR_TONE_EFFECTS = [
-  { id: 'levels', label: 'LEVELS', hint: 'contrast stretch', category: 'color-tone', mediaTypes: ['image', 'video'], fn: levels },
-  { id: 'duotone', label: 'DUOTONE', hint: 'two-hue luminance map', category: 'color-tone', mediaTypes: ['image', 'video'], stableAcrossFrames: true, fn: duotone },
-  { id: 'lensAberration', label: 'LENS ABERRATION', hint: 'clean radial color fringe', category: 'color-tone', mediaTypes: ['image', 'video'], fn: lensAberration },
-  { id: 'hueRotate', label: 'HUE ROTATE', hint: 'shift all hues', category: 'color-tone', mediaTypes: ['image', 'video'], stableAcrossFrames: true, fn: hueRotate },
+  { id: 'levels', label: 'LEVELS', hint: 'contrast stretch', category: 'color-tone', mediaTypes: ['image', 'video'], slot: 'colour', cost: 1, motion: { kind: 'sweep', target: 'levels', speed: 0.2 }, fn: levels },
+  { id: 'duotone', label: 'DUOTONE', hint: 'two-hue luminance map', category: 'color-tone', mediaTypes: ['image', 'video'], stableAcrossFrames: true, slot: 'colour', cost: 1, motion: { kind: 'sweep', target: 'huePair', speed: 0.1 }, fn: duotone },
+  { id: 'lensAberration', label: 'LENS ABERRATION', hint: 'clean radial color fringe', category: 'color-tone', mediaTypes: ['image', 'video'], slot: 'distortion', cost: 1, motion: { kind: 'breathe', target: 'fringe', speed: 0.12 }, fn: lensAberration },
+  { id: 'hueRotate', label: 'HUE ROTATE', hint: 'shift all hues', category: 'color-tone', mediaTypes: ['image', 'video'], stableAcrossFrames: true, slot: 'colour', cost: 1, motion: { kind: 'sweep', target: 'angle', speed: 0.08 }, fn: hueRotate },
   {
-    id: 'matrixColor', label: 'MATRIX COLOR', hint: 'color-space remap + posterize', category: 'color-tone', mediaTypes: ['image', 'video'], stableAcrossFrames: true, fn: matrixColor,
+    id: 'matrixColor', label: 'MATRIX COLOR', hint: 'color-space remap + posterize', category: 'color-tone', mediaTypes: ['image', 'video'], stableAcrossFrames: true, slot: 'colour', cost: 2, motion: { kind: 'drift', target: 'palette', speed: 0.12 }, fn: matrixColor,
     params: [
       { key: 'colorMode', type: 'select', label: 'MODE', default: 'cyberTint', options: [
         { value: 'none', label: 'Native' }, { value: 'cyberTint', label: 'Cyber Tint' }, { value: 'monochrome', label: 'Monochrome' },

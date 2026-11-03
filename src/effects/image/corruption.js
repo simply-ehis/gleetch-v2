@@ -190,14 +190,14 @@ export function pixelEcho(buf, W, H, intensity, rng) {
 }
 
 export const CORRUPTION_EFFECTS = [
-  { id: 'pixelSort', label: 'PIXEL SORT', hint: 'segment-sorted by channel', category: 'corruption', mediaTypes: ['image', 'video'], needsChannel: true, fn: pixelSort },
-  { id: 'chanShift', label: 'CHANNEL DRIFT', hint: 'RGB layers offset apart', category: 'corruption', mediaTypes: ['image', 'video'], fn: chanShift },
-  { id: 'scanline', label: 'SCANLINE RIP', hint: 'random row displacement', category: 'corruption', mediaTypes: ['image', 'video'], fn: scanline },
-  { id: 'bitFlip', label: 'BIT FLIP', hint: 'raw entropy injection', category: 'corruption', mediaTypes: ['image', 'video'], fn: bitFlip },
-  { id: 'dataMosh', label: 'DATAMOSH', hint: 'block duplication smear', category: 'corruption', mediaTypes: ['image', 'video'], fn: dataMosh },
-  { id: 'waveWarp', label: 'WAVE WARP', hint: 'sine wave distortion', category: 'corruption', mediaTypes: ['image', 'video'], fn: waveWarp },
-  { id: 'invertZones', label: 'INVERT ZONES', hint: 'random region inversion', category: 'corruption', mediaTypes: ['image', 'video'], fn: invertZones },
-  { id: 'quantize', label: 'QUANTIZE', hint: 'color level reduction', category: 'corruption', mediaTypes: ['image', 'video'], fn: quantize },
-  { id: 'stripeBurn', label: 'STRIPE BURN', hint: 'horizontal streak repeat', category: 'corruption', mediaTypes: ['image', 'video'], fn: stripeBurn },
-  { id: 'pixelEcho', label: 'PIXEL ECHO', hint: 'ghost channel overlay', category: 'corruption', mediaTypes: ['image', 'video'], fn: pixelEcho },
+  { id: 'pixelSort', label: 'PIXEL SORT', hint: 'segment-sorted by channel', category: 'corruption', mediaTypes: ['image', 'video'], needsChannel: true, slot: 'distortion', cost: 3, motion: { kind: 'steps', target: 'threshold', speed: 0.4 }, fn: pixelSort },
+  { id: 'chanShift', label: 'CHANNEL DRIFT', hint: 'RGB layers offset apart', category: 'corruption', mediaTypes: ['image', 'video'], slot: 'distortion', cost: 1, motion: { kind: 'drift', target: 'offset', speed: 0.15 }, fn: chanShift },
+  { id: 'scanline', label: 'SCANLINE RIP', hint: 'random row displacement', category: 'corruption', mediaTypes: ['image', 'video'], slot: 'texture', cost: 1, motion: { kind: 'drift', target: 'offset', speed: 0.2 }, fn: scanline },
+  { id: 'bitFlip', label: 'BIT FLIP', hint: 'raw entropy injection', category: 'corruption', mediaTypes: ['image', 'video'], slot: 'noise', cost: 1, motion: { kind: 'burst', target: 'density', speed: 1.2 }, fn: bitFlip },
+  { id: 'dataMosh', label: 'DATAMOSH', hint: 'block duplication smear', category: 'corruption', mediaTypes: ['image', 'video'], slot: 'warp', cost: 2, motion: { kind: 'burst', target: 'intensity', speed: 0.8 }, fn: dataMosh },
+  { id: 'waveWarp', label: 'WAVE WARP', hint: 'sine wave distortion', category: 'corruption', mediaTypes: ['image', 'video'], slot: 'warp', cost: 2, motion: { kind: 'pulse', target: 'amplitude', speed: 0.25 }, fn: waveWarp },
+  { id: 'invertZones', label: 'INVERT ZONES', hint: 'random region inversion', category: 'corruption', mediaTypes: ['image', 'video'], slot: 'colour', cost: 1, motion: { kind: 'burst', target: 'intensity', speed: 0.5 }, fn: invertZones },
+  { id: 'quantize', label: 'QUANTIZE', hint: 'color level reduction', category: 'corruption', mediaTypes: ['image', 'video'], slot: 'colour', cost: 1, motion: { kind: 'steps', target: 'levels', speed: 0.2 }, fn: quantize },
+  { id: 'stripeBurn', label: 'STRIPE BURN', hint: 'horizontal streak repeat', category: 'corruption', mediaTypes: ['image', 'video'], slot: 'distortion', cost: 2, motion: { kind: 'steps', target: 'position', speed: 0.3 }, fn: stripeBurn },
+  { id: 'pixelEcho', label: 'PIXEL ECHO', hint: 'ghost channel overlay', category: 'corruption', mediaTypes: ['image', 'video'], slot: 'overlay', cost: 2, motion: { kind: 'drift', target: 'offset', speed: 0.1 }, fn: pixelEcho },
 ];

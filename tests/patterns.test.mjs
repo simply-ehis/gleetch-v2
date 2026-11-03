@@ -4,8 +4,8 @@ import { PATTERNS, getPatternById } from '../src/patterns/registry.js';
 import { prng } from '../src/core/rng.js';
 import { createMockContext } from './helpers/mock-canvas.mjs';
 
-test('registry has exactly 120 patterns with no duplicate ids', () => {
-  assert.equal(PATTERNS.length, 120);
+test('registry has 160 patterns (100 core + 40 base additions) with no duplicate ids', () => {
+  assert.equal(PATTERNS.length, 160);
   const seen = new Set();
   for (const p of PATTERNS) {
     assert.ok(!seen.has(p.id), `duplicate pattern id: ${p.id}`);

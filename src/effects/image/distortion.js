@@ -142,9 +142,9 @@ export function displacementMap(buf, W, H, intensity) {
 }
 
 export const DISTORTION_EFFECTS = [
-  { id: 'gaussianBlur', label: 'GAUSSIAN BLUR', hint: 'soft directional-free blur', category: 'distortion', mediaTypes: ['image', 'video'], fn: gaussianBlur },
-  { id: 'pixelate', label: 'PIXELATE', hint: 'mosaic block averaging', category: 'distortion', mediaTypes: ['image', 'video'], fn: pixelate },
-  { id: 'lensWarp', label: 'LENS WARP', hint: 'clean barrel/pincushion bulge', category: 'distortion', mediaTypes: ['image', 'video'], stableAcrossFrames: true, fn: lensWarp },
-  { id: 'lineDistortion', label: 'LINE DISTORTION', hint: 'flowing row-shift curtain', category: 'distortion', mediaTypes: ['image', 'video'], stableAcrossFrames: true, fn: lineDistortion },
-  { id: 'displacementMap', label: 'DISPLACEMENT MAP', hint: 'self-luminance liquify', category: 'distortion', mediaTypes: ['image', 'video'], fn: displacementMap },
+  { id: 'gaussianBlur', label: 'GAUSSIAN BLUR', hint: 'soft directional-free blur', category: 'distortion', mediaTypes: ['image', 'video'], slot: 'blur', cost: 2, motion: { kind: 'pulse', target: 'radius', speed: 0.2 }, fn: gaussianBlur },
+  { id: 'pixelate', label: 'PIXELATE', hint: 'mosaic block averaging', category: 'distortion', mediaTypes: ['image', 'video'], slot: 'texture', cost: 1, motion: { kind: 'steps', target: 'blockSize', speed: 0.3 }, fn: pixelate },
+  { id: 'lensWarp', label: 'LENS WARP', hint: 'clean barrel/pincushion bulge', category: 'distortion', mediaTypes: ['image', 'video'], stableAcrossFrames: true, slot: 'warp', cost: 2, motion: { kind: 'breathe', target: 'bulge', speed: 0.15 }, fn: lensWarp },
+  { id: 'lineDistortion', label: 'LINE DISTORTION', hint: 'flowing row-shift curtain', category: 'distortion', mediaTypes: ['image', 'video'], stableAcrossFrames: true, slot: 'warp', cost: 2, motion: { kind: 'pulse', target: 'frequency', speed: 0.3 }, fn: lineDistortion },
+  { id: 'displacementMap', label: 'DISPLACEMENT MAP', hint: 'self-luminance liquify', category: 'distortion', mediaTypes: ['image', 'video'], slot: 'warp', cost: 3, motion: { kind: 'drift', target: 'scale', speed: 0.1 }, fn: displacementMap },
 ];

@@ -1,19 +1,31 @@
 import { prng } from './rng.js';
 import { applyEffectChain } from '../effects/registry.js';
 import { renderProcedural } from './procedural.js';
+import { renderLayer1, renderLayer2, renderLayer3 } from './layers.js';
 
-// Pure function: same seed + same recipe = same output at any resolution.
-// Preview = small (tier-based). Export = target size, re-rendered from scratch.
-export function renderStill({ seed, algos, intensity, channel, effectParams, W, H, maxLayers = 3, dither = false }) {
-  const canvas = document.createElement('canvas');
-  canvas.width = W; canvas.height = H;
-  const ctx = canvas.getContext('2d', { willReadFrequently: true });
-  try { renderProcedural(ctx, W, H, seed, { maxLayers }); }
-  catch { ctx.fillStyle = '#FF2D6B'; ctx.fillRect(0, 0, W, H); }
-  let buf = ctx.getImageData(0, 0, W, H).data;
-  buf = applyEffectChain(buf, algos, { mediaType: 'image', W, H, intensity, channel }, prng(seed + 999), effectParams);
-  if (dither) applyDither(buf, W, H);
-  return buf;
+// Full-quality still render from a saved recipe. Mirrors the live preview
+// pipeline: Layer 1 (base) → Layer 2 (effects) → Layer 3 (colour).
+// Async because Layer 1 may need to initialise the GPU base engine.
+// Falls back to the legacy procedural render if the base engine is unavailable.
+export async function renderStill({ seed, algos, intensity, channel, effectParams, W, H, maxLayers = 3, dither = false, layerRecipe, colourPasses }) {
+  const baseBuf = await renderBaseBuffer({ seed, W, H, maxLayers, layerRecipe });
+  const fxBuf = renderLayer2({ seed, effects: algos, intensity, channel: 0 }, baseBuf, W, H, effectParams);
+  const passes = (colourPasses && colourPasses.length) ? colourPasses : (layerRecipe?.colour?.passes ?? []);
+  return renderLayer3({ colour: { passes } }, fxBuf, W, H);
+}
+
+async function renderBaseBuffer({ seed, W, H, maxLayers, layerRecipe }) {
+  try {
+    return await renderLayer1({ seed, tier: 'high' }, W, H, { baseRecipe: layerRecipe?.base?.recipe });
+  } catch {
+    // Legacy fallback: procedural base (no GPU engine).
+    const canvas = document.createElement('canvas');
+    canvas.width = W; canvas.height = H;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    try { renderProcedural(ctx, W, H, seed, { maxLayers }); }
+    catch { ctx.fillStyle = '#FF2D6B'; ctx.fillRect(0, 0, W, H); }
+    return ctx.getImageData(0, 0, W, H);
+  }
 }
 
 // Ordered (Bayer) dither to prevent banding in smooth dark gradients.

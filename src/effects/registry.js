@@ -38,72 +38,119 @@ import { DECAY_TEXT_EFFECTS } from './text/decay.js';
 import { STRUCTURE_TEXT_EFFECTS } from './text/structure.js';
 
 // Motion profiles by effect family. Effects not listed here use default (burst).
+// Each motion names a kind from core/motion.js plus its speed, target param and a
+// short list of alternate kinds the shuffle can substitute when the first is a poor fit.
 export const MOTION_PROFILES = {
   // corruption → burst/steps
-  dataMosh: { kind: 'burst', target: 'intensity', speed: 0.8 },
-  pixelSort: { kind: 'steps', target: 'threshold', speed: 0.4 },
-  bitFlip: { kind: 'burst', target: 'density', speed: 1.2 },
-  chanShift: { kind: 'drift', target: 'offset', speed: 0.15 },
-  stripeBurn: { kind: 'steps', target: 'position', speed: 0.3 },
+  dataMosh: { kind: 'burst', target: 'intensity', speed: 0.8, alternates: ['steps', 'scrub'] },
+  pixelSort: { kind: 'steps', target: 'threshold', speed: 0.4, alternates: ['burst', 'scrub'] },
+  bitFlip: { kind: 'burst', target: 'density', speed: 1.2, alternates: ['steps'] },
+  chanShift: { kind: 'drift', target: 'offset', speed: 0.15, alternates: ['sweep'] },
+  stripeBurn: { kind: 'steps', target: 'position', speed: 0.3, alternates: ['burst'] },
   // color-tone → sweep/drift
-  duotone: { kind: 'sweep', target: 'huePair', speed: 0.1 },
-  hueRotate: { kind: 'sweep', target: 'angle', speed: 0.08 },
-  matrixColor: { kind: 'drift', target: 'palette', speed: 0.12 },
-  quantize: { kind: 'pulse', target: 'levels', speed: 0.2 },
+  duotone: { kind: 'sweep', target: 'huePair', speed: 0.1, alternates: ['drift', 'pulse'] },
+  hueRotate: { kind: 'sweep', target: 'angle', speed: 0.08, alternates: ['sweep'] },
+  matrixColor: { kind: 'drift', target: 'palette', speed: 0.12, alternates: ['sweep'] },
+  quantize: { kind: 'pulse', target: 'levels', speed: 0.2, alternates: ['steps'] },
   // distortion → pulse/breathe
-  waveWarp: { kind: 'pulse', target: 'amplitude', speed: 0.25 },
-  lensWarp: { kind: 'breathe', target: 'bulge', speed: 0.15 },
-  displacementMap: { kind: 'drift', target: 'scale', speed: 0.1 },
-  lensAberration: { kind: 'breathe', target: 'fringe', speed: 0.12 },
-  lineDistortion: { kind: 'pulse', target: 'frequency', speed: 0.3 },
+  waveWarp: { kind: 'pulse', target: 'amplitude', speed: 0.25, alternates: ['breathe'] },
+  lensWarp: { kind: 'breathe', target: 'bulge', speed: 0.15, alternates: ['pulse'] },
+  displacementMap: { kind: 'drift', target: 'scale', speed: 0.1, alternates: ['breathe'] },
+  lensAberration: { kind: 'breathe', target: 'fringe', speed: 0.12, alternates: ['pulse'] },
+  lineDistortion: { kind: 'pulse', target: 'frequency', speed: 0.3, alternates: ['steps'] },
   // stylize → scrub/drift
-  oilPaint: { kind: 'scrub', target: 'brushSize', speed: 0.05 },
-  watercolorBleed: { kind: 'drift', target: 'bleed', speed: 0.08 },
-  risograph: { kind: 'scrub', target: 'dotSize', speed: 0.06 },
+  oilPaint: { kind: 'scrub', target: 'brushSize', speed: 0.05, alternates: ['drift'] },
+  watercolorBleed: { kind: 'drift', target: 'bleed', speed: 0.08, alternates: ['pulse'] },
+  risograph: { kind: 'scrub', target: 'dotSize', speed: 0.06, alternates: ['steps'] },
   // overlay → drift with parallax
-  overlayScreen: { kind: 'drift', target: 'offset', speed: 0.1 },
-  overlayMultiply: { kind: 'drift', target: 'offset', speed: 0.1 },
-  overlayBlend: { kind: 'drift', target: 'offset', speed: 0.1 },
+  overlayScreen: { kind: 'drift', target: 'offset', speed: 0.1, alternates: ['pulse'] },
+  overlayMultiply: { kind: 'drift', target: 'offset', speed: 0.1, alternates: ['pulse'] },
+  overlayBlend: { kind: 'drift', target: 'offset', speed: 0.1, alternates: ['pulse'] },
 };
 
+// Per-category defaults for the three layer-2 tags. New effects opt in by setting
+// slot/cost/motion directly on their object; everything else inherits these.
+//   slot: the layer-2 bucket an effect competes within (only one per slot per shuffle)
+//   cost: weight against the tier's cost budget (heavier = costlier)
+//   motion: the per-effect motion kind from core/motion.js
+const SLOT_BY_CATEGORY = {
+  corruption: 'distortion', 'color-tone': 'colour', distortion: 'warp', stylize: 'stylize',
+  overlay: 'overlay', painterly: 'stylize', print: 'stylize', geometric: 'warp',
+  geometric2: 'warp', textile: 'texture', craft: 'stylize', atmosphere: 'overlay',
+  uncanny: 'overlay', presence: 'overlay', particle: 'particle',
+  photoTone: 'colour', tone: 'colour', texture: 'texture', form: 'distortion',
+  light: 'colour',
+};
+const COST_BY_CATEGORY = {
+  corruption: 2, 'color-tone': 1, distortion: 2, stylize: 2, overlay: 4,
+  painterly: 3, print: 3, geometric: 2, geometric2: 2, textile: 2, craft: 3,
+  atmosphere: 3, uncanny: 3, presence: 4, particle: 3,
+  photoTone: 2, tone: 2, texture: 2, form: 2, light: 2,
+};
+const MOTION_BY_CATEGORY = {
+  corruption: 'burst', 'color-tone': 'sweep', distortion: 'drift', stylize: 'scrub',
+  overlay: 'drift', painterly: 'scrub', print: 'pulse', geometric: 'breathe',
+  geometric2: 'breathe', textile: 'drift', craft: 'pulse', atmosphere: 'drift',
+  uncanny: 'pulse', presence: 'drift', particle: 'drift',
+  photoTone: 'sweep', tone: 'sweep', texture: 'drift', form: 'pulse', light: 'drift',
+};
+
+function defaultSlot(category) { return SLOT_BY_CATEGORY[category] ?? 'distortion'; }
+function defaultCost(category) { return COST_BY_CATEGORY[category] ?? 2; }
+function defaultMotion(category) { return MOTION_BY_CATEGORY[category] ?? 'drift'; }
+
+/** Attach layer-2 tags (slot, cost, motion) to an effect, filling defaults for
+ *  anything the effect didn't declare itself. Existing effects keep working:
+ *  the fields are optional and default sensibly. */
+export function tagEffect(effect) {
+  const category = effect.category;
+  return {
+    ...effect,
+    slot: effect.slot ?? defaultSlot(category),
+    cost: effect.cost ?? defaultCost(category),
+    motion: effect.motion ?? defaultMotion(category),
+  };
+}
+
 // One flat list of every effect across every media type and category.
-// Each entry: { id, label, hint, category, mediaTypes[], fn, needsChannel? }
+// Each entry: { id, label, hint, category, mediaTypes[], fn, needsChannel?,
+//   slot?, cost?, motion?, needsChannel?, params?, realtimeSafe?, stableAcrossFrames? }
 export const ALL_EFFECTS = [
-  ...CORRUPTION_EFFECTS,
-  ...COLOR_TONE_EFFECTS,
-  ...DISTORTION_EFFECTS,
-  ...STYLIZE_EFFECTS,
-  ...OVERLAY_EFFECTS,
-  ...UNCANNY_EFFECTS,
-  ...PRESENCE_EFFECTS,
-  ...PARTICLE_EFFECTS,
-  ...GEOMETRIC_EFFECTS,
-  ...PAINTERLY_EFFECTS,
-  ...PRINT_EFFECTS,
-  ...GEOMETRIC2_EFFECTS,
-  ...PHOTO_TONE_EFFECTS,
-  ...TEXTILE_EFFECTS,
-  ...CORRUPTION2_EFFECTS,
-  ...CRAFT_EFFECTS,
-  ...ATMOSPHERE_EFFECTS,
-  ...TEXT_EFFECTS,
-  ...CLEAN_TONE_TEXT_EFFECTS,
-  ...TYPOGRAPHY_TEXT_EFFECTS,
-  ...POSITION_TEXT_EFFECTS,
-  ...OVERFLOW_TEXT_EFFECTS,
-  ...WEB_EFFECTS,
-  ...OVERLAY_WEB_EFFECTS,
-  ...STYLIZE_WEB_EFFECTS,
-  ...AUDIO_EFFECTS,
-  ...AUDIO_CLEAN_TONE_EFFECTS,
-  ...LIGHT_EFFECTS,
-  ...TONE_EFFECTS,
-  ...TEXTURE_EFFECTS,
-  ...FORM_EFFECTS,
-  ...SCRIPT_TEXT_EFFECTS,
-  ...OVERFLOW2_TEXT_EFFECTS,
-  ...DECAY_TEXT_EFFECTS,
-  ...STRUCTURE_TEXT_EFFECTS,
+  ...CORRUPTION_EFFECTS.map(tagEffect),
+  ...COLOR_TONE_EFFECTS.map(tagEffect),
+  ...DISTORTION_EFFECTS.map(tagEffect),
+  ...STYLIZE_EFFECTS.map(tagEffect),
+  ...OVERLAY_EFFECTS.map(tagEffect),
+  ...UNCANNY_EFFECTS.map(tagEffect),
+  ...PRESENCE_EFFECTS.map(tagEffect),
+  ...PARTICLE_EFFECTS.map(tagEffect),
+  ...GEOMETRIC_EFFECTS.map(tagEffect),
+  ...PAINTERLY_EFFECTS.map(tagEffect),
+  ...PRINT_EFFECTS.map(tagEffect),
+  ...GEOMETRIC2_EFFECTS.map(tagEffect),
+  ...PHOTO_TONE_EFFECTS.map(tagEffect),
+  ...TEXTILE_EFFECTS.map(tagEffect),
+  ...CORRUPTION2_EFFECTS.map(tagEffect),
+  ...CRAFT_EFFECTS.map(tagEffect),
+  ...ATMOSPHERE_EFFECTS.map(tagEffect),
+  ...TEXT_EFFECTS.map(tagEffect),
+  ...CLEAN_TONE_TEXT_EFFECTS.map(tagEffect),
+  ...TYPOGRAPHY_TEXT_EFFECTS.map(tagEffect),
+  ...POSITION_TEXT_EFFECTS.map(tagEffect),
+  ...OVERFLOW_TEXT_EFFECTS.map(tagEffect),
+  ...WEB_EFFECTS.map(tagEffect),
+  ...OVERLAY_WEB_EFFECTS.map(tagEffect),
+  ...STYLIZE_WEB_EFFECTS.map(tagEffect),
+  ...AUDIO_EFFECTS.map(tagEffect),
+  ...AUDIO_CLEAN_TONE_EFFECTS.map(tagEffect),
+  ...LIGHT_EFFECTS.map(tagEffect),
+  ...TONE_EFFECTS.map(tagEffect),
+  ...TEXTURE_EFFECTS.map(tagEffect),
+  ...FORM_EFFECTS.map(tagEffect),
+  ...SCRIPT_TEXT_EFFECTS.map(tagEffect),
+  ...OVERFLOW2_TEXT_EFFECTS.map(tagEffect),
+  ...DECAY_TEXT_EFFECTS.map(tagEffect),
+  ...STRUCTURE_TEXT_EFFECTS.map(tagEffect),
 ];
 
 export function getEffectsFor(mediaType) {

@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { prng } from '../core/rng.js';
-import { loadImageFile, drawImageCover, drawFittedImage } from '../core/canvas-utils.js';
+import { loadImageFile, drawImageCover, drawFittedImage, makeOffscreenCanvas } from '../core/canvas-utils.js';
 import { FORMATS, resolveDims, clampDim } from '../core/formats.js';
 import { renderProcedural } from '../core/procedural.js';
 import { getEffectsFor, applyEffectChain, randomEffectSelection, isNoOp } from '../effects/registry.js';
@@ -13,8 +13,11 @@ import ShuffleButton from './ShuffleButton.jsx';
 import ScrambleText from './ScrambleText.jsx';
 import ActiveChainList from './ActiveChainList.jsx';
 import CopyRecipeButton from './CopyRecipeButton.jsx';
+import LayersPanel from './LayersPanel.jsx';
 import { useQuality } from '../core/quality.jsx';
 import { renderStill, EXPORT_SCALES, resolveExportDims } from '../core/render-still.js';
+import { renderLayer1, renderLayer2, renderLayer3 } from '../core/layers.js';
+import { shuffle3, BASE_FAMILIES } from '../core/shuffle3.js';
 
 const IMAGE_EFFECTS = getEffectsFor('image');
 
@@ -48,6 +51,12 @@ export default function VisualTab({ seed, iter, onReroll, mode, setMode, uploade
   const [exporting, setExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
   const [showPreview, setShowPreview] = useState(false);
+  const [buildMode, setBuildMode] = useState(initialRecipe?.b ?? false);
+  const [layerRecipe, setLayerRecipe] = useState(initialRecipe?.l ?? null);
+  const [colourPasses, setColourPasses] = useState(initialRecipe?.l?.colour?.passes ?? []);
+  const [baseFamily, setBaseFamily] = useState(layerRecipe?.family ?? 'beauty');
+  const [baseEngineBusy, setBaseEngineBusy] = useState(false);
+
   const previewRef = useRef(null);
   const workRef = useRef(null);
   const outRef = useRef(null);
@@ -80,18 +89,16 @@ export default function VisualTab({ seed, iter, onReroll, mode, setMode, uploade
     const ch = parseInt(customH, 10);
     const w = Number.isFinite(cw) ? cw : fmt.w;
     const h = Number.isFinite(ch) ? ch : fmt.h;
-    // For original+upload we need img, otherwise ratio/custom
     if (fmt.id === 'custom') return resolveDims('custom', w, h, null, capForCustom);
     if (fmt.id === 'original' && mode === 'upload' && uploadedImg) return resolveDims('original', 0, 0, uploadedImg, capForCustom);
     return resolveDims(fmt.id, 0, 0, null, capForCustom);
   }, [fmt, customW, customH, mode, uploadedImg, capForCustom]);
 
-  // Also compute actual capped by quality maxCanvasDim? We already capped via maxCustomDim per tier.
-  // For original+upload, resolveDims already caps to capForCustom.
   const dims = { W: dimsInfo.W, H: dimsInfo.H };
 
   const [intensityDebounced, setIntensityDebounced] = useState(intensity);
   const [effectParamsDebounced, setEffectParamsDebounced] = useState(effectParams);
+  const [colourPassesDebounced, setColourPassesDebounced] = useState(colourPasses);
 
   useEffect(() => {
     const t = setTimeout(() => setIntensityDebounced(intensity), 80);
@@ -103,54 +110,82 @@ export default function VisualTab({ seed, iter, onReroll, mode, setMode, uploade
     return () => clearTimeout(t);
   }, [effectParams]);
 
+  useEffect(() => {
+    const t = setTimeout(() => setColourPassesDebounced(colourPasses), 80);
+    return () => clearTimeout(t);
+  }, [colourPasses]);
+
   const dimsMemo = useMemo(() => ({ W: dims.W, H: dims.H }), [dims.W, dims.H]);
-  const run = useCallback(() => {
+
+  // ── Render pipeline: Layer 1 (base) → Layer 2 (effects) → Layer 3 (colour) ──
+  const run = useCallback(async () => {
     const wc = workRef.current, oc = outRef.current;
     if (!wc || !oc) return;
     const { W, H } = dimsMemo;
     setBusy(true);
-    const render = () => {
-      const ctx = wc.getContext('2d', { willReadFrequently: true });
-      wc.width = W; wc.height = H;
-      oc.width = W; oc.height = H;
-      if (mode === 'upload' && uploadedImg) {
-        if (fmt.fit === 'contain') {
-          ctx.fillStyle = '#0A0A1C';
-          ctx.fillRect(0, 0, W, H);
-          const scale = Math.min(W / uploadedImg.naturalWidth, H / uploadedImg.naturalHeight);
-          const sw = uploadedImg.naturalWidth * scale;
-          const sh = uploadedImg.naturalHeight * scale;
-          ctx.drawImage(uploadedImg, (W - sw) / 2, (H - sh) / 2, sw, sh);
+    const render = async () => {
+      try {
+        let baseBuf;
+        if (mode === 'upload' && uploadedImg) {
+          // Layer 1 = the uploaded image (no procedural base).
+          const c = makeOffscreenCanvas(W, H);
+          const ctx = c.getContext('2d', { willReadFrequently: true });
+          c.width = W; c.height = H;
+          if (fmt.fit === 'contain') {
+            ctx.fillStyle = '#0A0A1C';
+            ctx.fillRect(0, 0, W, H);
+            const scale = Math.min(W / uploadedImg.naturalWidth, H / uploadedImg.naturalHeight);
+            const sw = uploadedImg.naturalWidth * scale;
+            const sh = uploadedImg.naturalHeight * scale;
+            ctx.drawImage(uploadedImg, (W - sw) / 2, (H - sh) / 2, sw, sh);
+          } else {
+            drawImageCover(ctx, uploadedImg, W, H);
+          }
+          baseBuf = ctx.getImageData(0, 0, W, H);
         } else {
-          drawImageCover(ctx, uploadedImg, W, H);
+          // Layer 1 = procedural base (three-layer shuffle recipe or fresh).
+          const recipe = layerRecipe ?? { seed, tier: quality.name.toLowerCase() };
+          setBaseEngineBusy(true);
+          try {
+            baseBuf = await renderLayer1(recipe, W, H, { baseRecipe: layerRecipe?.base?.recipe });
+          } finally {
+            setBaseEngineBusy(false);
+          }
         }
-      } else {
-        try { renderProcedural(ctx, W, H, seed, { maxLayers: quality.maxLayers ?? 3 }); }
-        catch { ctx.fillStyle = '#FF2D6B'; ctx.fillRect(0, 0, W, H); }
+
+        // Layer 2 = effect stack on the base.
+        const ctx2 = { mediaType: 'image', W, H, intensity: intensityDebounced, channel: 0 };
+        const fxBuf = renderLayer2({ seed, effects: algos, intensity: intensityDebounced, channel: 0 }, baseBuf, W, H, effectParamsDebounced);
+
+        // Layer 3 = colour and paint passes (cheap final pass).
+        const passes = colourPassesDebounced.length ? colourPassesDebounced : (layerRecipe?.colour?.passes ?? []);
+        const final = renderLayer3({ colour: { passes } }, fxBuf, W, H);
+
+        let outImgData = outImageDataRef.current;
+        if (!outImgData || outImgData.width !== W || outImgData.height !== H) {
+          outImgData = oc.getContext('2d').createImageData(W, H);
+          outImageDataRef.current = outImgData;
+        }
+        outImgData.data.set(final.data);
+        oc.getContext('2d').putImageData(outImgData, 0, 0);
+      } catch (err) {
+        console.error('VisualTab render failed:', err);
+        const ctx = oc.getContext('2d');
+        ctx.fillStyle = '#FF2D6B';
+        ctx.fillRect(0, 0, W, H);
+      } finally {
+        setBusy(false);
       }
-      let buf = ctx.getImageData(0, 0, W, H).data;
-      buf = applyEffectChain(buf, algos, { mediaType: 'image', W, H, intensity: intensityDebounced, channel }, prng(seed + 999), effectParamsDebounced);
-      let outImgData = outImageDataRef.current;
-      if (!outImgData || outImgData.width !== W || outImgData.height !== H) {
-        outImgData = oc.getContext('2d').createImageData(W, H);
-        outImageDataRef.current = outImgData;
-      }
-      outImgData.data.set(buf);
-      oc.getContext('2d').putImageData(outImgData, 0, 0);
     };
-    setTimeout(() => {
-      try { render(); }
-      catch (err) { console.error('VisualTab render failed:', err); }
-      finally { setBusy(false); }
-    }, 10);
-  }, [seed, mode, uploadedImg, algos, intensityDebounced, channel, dimsMemo, effectParamsDebounced, fmt.fit, quality.maxLayers]);
+    setTimeout(() => { render(); }, 10);
+   }, [seed, mode, uploadedImg, algos, intensityDebounced, channel, dimsMemo, effectParamsDebounced, colourPassesDebounced, layerRecipe, fmt.fit, quality.name]);
 
   useEffect(() => { run(); }, [run]);
 
   const withoutOrRefill = (chain, id) => chain.filter((a) => a !== id);
 
-  const applyPreset = (k) => { const p = IMAGE_PRESETS[k]; setAlgos(p.algos); setIntensity(p.intensity); setPreset(k); };
-  const toggleAlgo = (id) => { setPreset(null); setAlgos((p) => (p.includes(id) ? withoutOrRefill(p, id) : [...p, id])); };
+  const applyPreset = (k) => { const p = IMAGE_PRESETS[k]; setAlgos(p.algos); setIntensity(p.intensity); setPreset(k); setLayerRecipe(null); };
+  const toggleAlgo = (id) => { setPreset(null); setLayerRecipe(null); setAlgos((p) => (p.includes(id) ? withoutOrRefill(p, id) : [...p, id])); };
   const toggleFavorite = (id) => {
     setFavorites((prev) => {
       const next = prev.includes(id) ? prev.filter((f) => f !== id) : [...prev, id];
@@ -159,24 +194,29 @@ export default function VisualTab({ seed, iter, onReroll, mode, setMode, uploade
     });
   };
 
+  // Three-layer shuffle: base → effects → colour. All or nothing.
   const shuffle = () => {
     const rng = prng(randomSeed());
     setPreset(null);
-    let chain = randomEffectSelection('image', rng, { previousChain: algos });
-    let intensity = 0.3 + rng() * 0.6;
-    for (let attempt = 0; attempt < 3; attempt++) {
-      const testCanvas = document.createElement('canvas');
-      testCanvas.width = 64; testCanvas.height = 64;
-      const testCtx = testCanvas.getContext('2d');
-      try { renderProcedural(testCtx, 64, 64, seed, { maxLayers: 1 }); } catch { testCtx.fillStyle = '#1a1a2e'; testCtx.fillRect(0, 0, 64, 64); }
-      const before = testCtx.getImageData(0, 0, 64, 64).data;
-      const after = applyEffectChain(new Uint8ClampedArray(before), chain, { mediaType: 'image', W: 64, H: 64, intensity, channel }, prng(seed + 999), {});
-      if (!isNoOp(before, after)) break;
-      chain = randomEffectSelection('image', rng, { previousChain: algos });
-      intensity = 0.3 + rng() * 0.6;
-    }
-    setAlgos(chain);
-    setIntensity(intensity);
+    setLayerRecipe(null);
+    const result = shuffle3({ seed, tier: quality.name.toLowerCase(), family: baseFamily, rng });
+    setBaseFamily(result.family);
+    setLayerRecipe(result);
+    setAlgos(result.effects);
+    setIntensity(result.intensity);
+    setColourPasses(result.colour.passes);
+    if (!seedLocked) onReroll();
+  };
+
+  // Re-roll base within the current family (build mode or shuffle).
+  const rerollBase = () => {
+    const rng = prng(randomSeed());
+    const result = shuffle3({ seed, tier: quality.name.toLowerCase(), family: baseFamily, rng });
+    setBaseFamily(result.family);
+    setLayerRecipe(result);
+    setAlgos(result.effects);
+    setIntensity(result.intensity);
+    setColourPasses(result.colour.passes);
     if (!seedLocked) onReroll();
   };
 
@@ -191,8 +231,6 @@ export default function VisualTab({ seed, iter, onReroll, mode, setMode, uploade
   const exportFullRes = () => {
     setExporting(true);
     setExportProgress(0);
-    // Scale the CURRENT format dims (whatever the FORMAT row above holds),
-    // preserving aspect — not a fixed-aspect preset.
     const { W, H } = resolveExportDims(exportScale, dims.W, dims.H);
     const hasUpload = mode === 'upload' && uploadedImg;
     const useWorker = typeof Worker !== 'undefined' && W * H > 512 * 512;
@@ -213,11 +251,8 @@ export default function VisualTab({ seed, iter, onReroll, mode, setMode, uploade
         else if (e.data.type === 'done') { worker.terminate(); saveBlob(e.data.blob); }
         else if (e.data.type === 'error') { worker.terminate(); fail(new Error(e.data.message)); }
       };
-      const base = { seed, algos, intensity, channel, effectParams, W, H, maxLayers: quality.maxLayers ?? 3, fit: fmt.fit };
+      const base = { seed, algos, intensity, channel, effectParams, W, H, maxLayers: quality.maxLayers ?? 3, fit: fmt.fit, layerRecipe, colourPasses };
       if (hasUpload) {
-        // Transfer the upload as an ImageBitmap so the worker starts from
-        // the user's image at export size (previously it always rendered
-        // procedural, exporting the wrong content in upload mode).
         createImageBitmap(uploadedImg).then((bitmap) => {
           worker.postMessage({ ...base, source: bitmap }, [bitmap]);
         }).catch((err) => { worker.terminate(); fail(err); });
@@ -225,7 +260,7 @@ export default function VisualTab({ seed, iter, onReroll, mode, setMode, uploade
         worker.postMessage(base);
       }
     } else {
-      setTimeout(() => {
+      setTimeout(async () => {
         try {
           const canvas = document.createElement('canvas');
           canvas.width = W; canvas.height = H;
@@ -238,7 +273,7 @@ export default function VisualTab({ seed, iter, onReroll, mode, setMode, uploade
             imgData.data.set(buf);
             ctx.putImageData(imgData, 0, 0);
           } else {
-            const buf = renderStill({ seed, algos, intensity, channel, effectParams, W, H, maxLayers: quality.maxLayers ?? 3, dither: true });
+            const buf = await renderStill({ seed, algos, intensity, channel, effectParams, W, H, maxLayers: quality.maxLayers ?? 3, dither: true, layerRecipe, colourPasses });
             const imgData = ctx.createImageData(W, H);
             imgData.data.set(buf);
             ctx.putImageData(imgData, 0, 0);
@@ -259,22 +294,23 @@ export default function VisualTab({ seed, iter, onReroll, mode, setMode, uploade
     const { W, H } = dimsMemo;
     pc.width = W; pc.height = H;
     const pctx = pc.getContext('2d', { willReadFrequently: true });
-    try { renderProcedural(pctx, W, H, seed, { maxLayers: quality.maxLayers ?? 3 }); }
-    catch { pctx.fillStyle = '#1a1a2e'; pctx.fillRect(0, 0, W, H); }
-    let buf = pctx.getImageData(0, 0, W, H).data;
-    buf = applyEffectChain(buf, algos, { mediaType: 'image', W, H, intensity: intensityDebounced, channel }, prng(seed + 999), effectParamsDebounced);
-    const imgData = pctx.createImageData(W, H);
-    imgData.data.set(buf);
-    pctx.putImageData(imgData, 0, 0);
-  }, [showPreview, dimsMemo, seed, algos, intensityDebounced, channel, effectParamsDebounced, quality.maxLayers]);
+    try {
+      const baseBuf = renderProcedural(pctx, W, H, seed, { maxLayers: quality.maxLayers ?? 3 }) || pctx.getImageData(0, 0, W, H);
+      let buf = baseBuf.data;
+      buf = applyEffectChain(buf, algos, { mediaType: 'image', W, H, intensity: intensityDebounced, channel }, prng(seed + 999), effectParamsDebounced);
+      const passes = colourPassesDebounced.length ? colourPassesDebounced : (layerRecipe?.colour?.passes ?? []);
+      const final = renderLayer3({ colour: { passes } }, { data: buf, width: W, height: H }, W, H);
+      const imgData = pctx.createImageData(W, H);
+      imgData.data.set(final.data);
+      pctx.putImageData(imgData, 0, 0);
+    } catch { pctx.fillStyle = '#1a1a2e'; pctx.fillRect(0, 0, W, H); }
+  }, [showPreview, dimsMemo, seed, algos, intensityDebounced, channel, effectParamsDebounced, colourPassesDebounced, layerRecipe, quality.maxLayers]);
 
   useEffect(() => { if (showPreview) updatePreview(); }, [updatePreview, showPreview]);
 
   const copy = () => {
     const oc = outRef.current; if (!oc) return;
     oc.toBlob(async (blob) => {
-      // toBlob yields null when the canvas has no image data to encode —
-      // fall back to download instead of crashing on a null Blob.
       if (!blob) { download(); return; }
       try { await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]); }
       catch { download(); }
@@ -285,14 +321,12 @@ export default function VisualTab({ seed, iter, onReroll, mode, setMode, uploade
     e.preventDefault();
     const f = e.dataTransfer.files[0];
     if (!f?.type.startsWith('image/')) return;
-    try { setUploadedImg(await loadImageFile(f)); setMode('upload'); }
+    try { setUploadedImg(await loadImageFile(f)); setMode('upload'); setLayerRecipe(null); setBuildMode(false); }
     catch (err) { console.error('Image load error:', err); }
   };
 
   const seedStr = String(seed).padStart(6, '0');
-
   const fmtId = fmt.id;
-  // Export dims scale the current format (recomputed every render — pure math).
   const exportDims = resolveExportDims(exportScale, dims.W, dims.H);
   const applyFmt = (id) => {
     if (id === 'custom') {
@@ -304,13 +338,16 @@ export default function VisualTab({ seed, iter, onReroll, mode, setMode, uploade
     }
   };
 
+  const tierLabel = quality.name;
+
   return (
     <>
       <canvas ref={workRef} width={dims.W} height={dims.H} style={{ display: 'none' }} />
       <aside className="sidebar">
         <div className="mode-row">
-          <button className={`mode-btn ${mode === 'generate' ? 'on' : ''}`} onClick={() => setMode('generate')}>✦ GENERATE</button>
-          <button className={`mode-btn ${mode === 'upload' ? 'on' : ''}`} onClick={() => setMode('upload')}>↑ UPLOAD</button>
+          <button className={`mode-btn ${mode === 'generate' ? 'on' : ''}`} onClick={() => { setMode('generate'); setBuildMode(false); setLayerRecipe(null); }}>✦ GENERATE</button>
+          <button className={`mode-btn ${mode === 'upload' ? 'on' : ''}`} onClick={() => { setMode('upload'); setBuildMode(false); setLayerRecipe(null); }}>↑ UPLOAD</button>
+          <button className={`mode-btn ${buildMode ? 'on' : ''}`} onClick={() => setBuildMode((v) => { const n = !v; setLayerRecipe(null); return n; })}>🛠 BUILD</button>
         </div>
 
         {mode === 'upload' ? (
@@ -323,7 +360,8 @@ export default function VisualTab({ seed, iter, onReroll, mode, setMode, uploade
         ) : (
           <div className="gen-box">
             <div className="gen-icon">⟳</div>
-            <div className="gen-text">PROCEDURAL · INFINITE LAYERS<br />pure randomness every roll</div>
+            <div className="gen-text">PROCEDURAL · INFINITE LAYERS<br />{buildMode ? 'manual base · effects · colour' : 'base → effects → colour'}</div>
+            {buildMode && baseEngineBusy && <div className="sidebar-hint" style={{ fontSize: 10, color: '#8a8f98', marginTop: 4 }}>base engine loading…</div>}
           </div>
         )}
 
@@ -347,12 +385,32 @@ export default function VisualTab({ seed, iter, onReroll, mode, setMode, uploade
           <button className={`fit-btn ${fmt.fit === 'cover' ? 'on' : ''}`} onClick={() => setFmt((p) => ({ ...p, fit: 'cover' }))}>COVER</button>
           <button className={`fit-btn ${fmt.fit === 'contain' ? 'on' : ''}`} onClick={() => setFmt((p) => ({ ...p, fit: 'contain' }))}>CONTAIN</button>
         </div>
-        {dimsInfo.capped && <div className="sidebar-hint">capped by {quality.name} quality — switch to HIGH for full 2048</div>}
+        {dimsInfo.capped && <div className="sidebar-hint">capped by {tierLabel} quality — switch to HIGH for full 2048</div>}
 
         <div className="div" />
+
+        {/* Build mode: base family picker */}
+        {buildMode && (
+          <>
+            <span className="lbl">BASE FAMILY</span>
+            <div className="fmt-row">
+              {Object.entries(BASE_FAMILIES).map(([id, label]) => (
+                <button key={id} className={`fmt-btn ${baseFamily === id ? 'on' : ''}`} onClick={() => { setBaseFamily(id); rerollBase(); }}>{label}</button>
+              ))}
+            </div>
+            <button className="act-btn" onClick={rerollBase} disabled={busy || baseEngineBusy}>{busy || baseEngineBusy ? 'RENDERING…' : '⟳ NEW BASE'}</button>
+            {layerRecipe && (
+              <div className="sidebar-hint" style={{ fontSize: 10, color: '#8a8f98', marginTop: 4 }}>
+                {layerRecipe.base.recipe.name} · {layerRecipe.effects.length} fx · cost {layerRecipe.effectCost}
+              </div>
+            )}
+            <div className="div" />
+          </>
+        )}
+
         <span className="lbl">PRESETS</span>
         <PresetPanel presets={IMAGE_PRESETS} active={preset} onSelect={applyPreset} />
-        <button className="adv-toggle" onClick={() => setShowAdv((v) => !v)}>{showAdv ? '▼' : '▶'} EFFECTS ({IMAGE_EFFECTS.length})</button>
+        <button className="adv-toggle" onClick={() => setShowAdv((v) => !v)}>{showAdv ? '▼' : '▶'} EFFECTS {IMAGE_EFFECTS.length}</button>
         {showAdv && (
           <div className="algo-scroll">
             <AlgoPanel effects={IMAGE_EFFECTS} active={algos} onToggle={toggleAlgo} favorites={favorites} onToggleFavorite={toggleFavorite} />
@@ -368,13 +426,13 @@ export default function VisualTab({ seed, iter, onReroll, mode, setMode, uploade
             )}
           </div>
         )}
-        <ActiveChainList algos={algos} mediaType="image" onReorder={setAlgos} onRemove={(id) => setAlgos((p) => withoutOrRefill(p, id))} effectParams={effectParams} onParamsChange={setEffectParams} />
+        <ActiveChainList algos={algos} mediaType="image" onReorder={setAlgos} onRemove={(id) => { setLayerRecipe(null); setAlgos((p) => withoutOrRefill(p, id)); }} effectParams={effectParams} onParamsChange={setEffectParams} />
 
         <div className="div" />
         <div className="sec">
           <span className="lbl">INTENSITY — {(intensity * 100).toFixed(0)}%</span>
           <input type="range" className="slider" min="0" max="1" step=".01"
-            value={intensity} onChange={(e) => { setPreset(null); setIntensity(parseFloat(e.target.value)); }} />
+            value={intensity} onChange={(e) => { setPreset(null); setLayerRecipe(null); setIntensity(parseFloat(e.target.value)); }} />
         </div>
         <div className="div" />
         <div className="seed-row"><span className="seed-lbl">SEED</span><span className="seed-val">#{seedStr}</span>
@@ -383,7 +441,26 @@ export default function VisualTab({ seed, iter, onReroll, mode, setMode, uploade
           </button>
         </div>
         <button className="reroll-btn" onClick={onReroll} disabled={busy}>{busy ? 'RENDERING...' : '⟳  RE-ROLL'}</button>
-        <ShuffleButton onClick={shuffle} disabled={busy} />
+        <ShuffleButton onClick={shuffle} disabled={busy || baseEngineBusy} label={buildMode ? 'RESHUFFLE LAYERS' : 'SHUFFLE EFFECTS'} />
+
+        {/* Three-layer panels (Base / Effects / Colour) */}
+        <LayersPanel
+          seed={seed}
+          algos={algos}
+          onAlgosChange={(next) => { setLayerRecipe(null); setAlgos(next); }}
+          intensity={intensity}
+          onIntensityChange={setIntensity}
+          colourPasses={colourPasses}
+          onColourPassesChange={setColourPasses}
+          collapsed={!buildMode}
+          onToggleCollapsed={() => {}}
+          layerRecipe={layerRecipe}
+          onBaseReroll={rerollBase}
+          baseFamily={baseFamily}
+          onBaseFamilyChange={(id) => { setBaseFamily(id); rerollBase(); }}
+        />
+
+        <div className="div" />
         <div className="action-row">
           <button className="act-btn" onClick={() => download('png')}>↓ PNG</button>
           <button className="act-btn" onClick={() => download('jpg')}>↓ JPG</button>
@@ -402,7 +479,12 @@ export default function VisualTab({ seed, iter, onReroll, mode, setMode, uploade
         {exportDims.capped && <div className="sidebar-hint">capped at 4096 long edge</div>}
         <button className="adv-toggle" onClick={() => setShowPreview(!showPreview)}>{showPreview ? '▼' : '▶'} LIVE PREVIEW IN FORMAT</button>
         {showPreview && <canvas ref={previewRef} className="preview-canvas" style={{ width: '100%', marginTop: 8, borderRadius: 4 }} />}
-        <CopyRecipeButton getRecipe={() => ({ t: 'visual', s: seed, a: algos, i: intensity, c: channel, p: effectParams, f: { id: fmt.id, w: dims.W, h: dims.H, fit: fmt.fit } })} />
+        <CopyRecipeButton getRecipe={() => ({
+          t: 'visual', s: seed, a: algos, i: intensity, c: channel, p: effectParams,
+          f: { id: fmt.id, w: dims.W, h: dims.H, fit: fmt.fit },
+          b: buildMode,
+          l: layerRecipe,
+        })} />
       </aside>
       <main className="main">
         <div className="canvas-wrap" onDragOver={(e) => e.preventDefault()} onDrop={onDropImage}>
@@ -415,7 +497,7 @@ export default function VisualTab({ seed, iter, onReroll, mode, setMode, uploade
           <span>ITER {String(iter).padStart(4, '0')}</span>
           <span>{algos.length} EFFECT{algos.length !== 1 ? 'S' : ''}</span>
         </div>
-        <div className="canvas-hint">quality: {quality.name} · {dims.W}×{dims.H} · {quality.enableHeavyEffects ? 'all effects' : 'heavy effects disabled'} {fmtId !== 'original' ? `· ${fmtId}` : ''}</div>
+        <div className="canvas-hint">quality: {tierLabel} · {dims.W}×{dims.H} · {quality.enableHeavyEffects ? 'all effects' : 'heavy effects disabled'} {fmtId !== 'original' ? `· ${fmtId}` : ''} {buildMode ? '· BUILD MODE' : ''}</div>
       </main>
     </>
   );
